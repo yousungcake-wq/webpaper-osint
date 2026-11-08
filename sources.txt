@@ -1,0 +1,96 @@
+conflict|BBC World|https://feeds.bbci.co.uk/news/world/rss.xml
+conflict|AlJazeera|https://www.aljazeera.com/xml/rss/all.xml
+conflict|DW World|https://rss.dw.com/rdf/rss-en-world
+conflict|UN News|https://news.un.org/feed/subscribe/en/news/all/rss.xml
+conflict|Guardian World|https://www.theguardian.com/world/rss
+conflict|Moscow Times|https://www.themoscowtimes.com/rss/news
+conflict|War on the Rocks|https://warontherocks.com/feed/
+conflict|Just Security|https://www.justsecurity.org/feed/
+conflict|Responsible Statecraft|https://responsiblestatecraft.org/feed/
+conflict|Breaking Defense|https://breakingdefense.com/feed/
+conflict|Defense News|https://www.defensenews.com/arc/outboundfeeds/rss/
+conflict|Al-Monitor|https://www.al-monitor.com/rss
+politics|Foreign Policy|https://foreignpolicy.com/feed/
+politics|Politico EU|https://www.politico.eu/feed/
+politics|Atlantic Council|https://www.atlanticcouncil.org/feed/
+politics|SCMP World|https://www.scmp.com/rss/91/feed
+politics|CNA World|https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml
+politics|The Diplomat|https://thediplomat.com/feed/
+politics|Foreign Affairs|https://www.foreignaffairs.com/rss.xml
+politics|Le Monde EN|https://www.lemonde.fr/en/rss/une.xml
+politics|Spiegel EN|https://www.spiegel.de/international/index.rss
+politics|France24|https://www.france24.com/en/rss
+economy|FT Home|https://www.ft.com/rss/home
+economy|Economist Finance|https://www.economist.com/finance-and-economics/rss.xml
+economy|CNBC Economy|https://www.cnbc.com/id/20910258/device/rss/rss.html
+economy|OilPrice|https://oilprice.com/rss/main
+economy|ECB Press|https://www.ecb.europa.eu/rss/press.xml
+economy|Fed Press|https://www.federalreserve.gov/feeds/press_all.xml
+economy|WTO News|https://www.wto.org/library/rss/latest_news_e.xml
+economy|Yonhap EN|https://en.yna.co.kr/RSS/news.xml
+finance|FT Markets|https://www.ft.com/markets?format=rss
+finance|CNBC Finance|https://www.cnbc.com/id/10000664/device/rss/rss.html
+finance|MarketWatch|https://feeds.marketwatch.com/marketwatch/topstories/
+tech|TechCrunch|https://techcrunch.com/feed/
+tech|The Verge|https://www.theverge.com/rss/index.xml
+tech|Ars Technica|https://feeds.arstechnica.com/arstechnica/index
+tech|Wired|https://www.wired.com/feed/rss
+tech|MIT Tech Review|https://www.technologyreview.com/feed/
+tech|The Register|https://www.theregister.com/headlines.atom
+google|GN Business|https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=en-US&gl=US&ceid=US:en
+google|GN World|https://news.google.com/rss/headlines/section/topic/WORLD?hl=en-US&gl=US&ceid=US:en
+google|GN Tech|https://news.google.com/rss/headlines/section/topic/TECHNOLOGY?hl=en-US&gl=US&ceid=US:en
+google|GN Reuters|https://news.google.com/rss/search?q=site:reuters.com+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Bloomberg|https://news.google.com/rss/search?q=site:bloomberg.com+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Markets|https://news.google.com/rss/search?q=%22stock+market%22+OR+bonds+OR+yields+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Central Banks|https://news.google.com/rss/search?q=%22central+bank%22+OR+%22interest+rates%22+OR+Fed+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Trade|https://news.google.com/rss/search?q=tariffs+OR+%22trade+war%22+OR+WTO+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN AI|https://news.google.com/rss/search?q=%22artificial+intelligence%22+OR+%22AI+chip%22+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Chips|https://news.google.com/rss/search?q=semiconductor+OR+TSMC+OR+Nvidia+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Tech Policy|https://news.google.com/rss/search?q=antitrust+OR+%22data+center%22+OR+%22AI+regulation%22+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Deals|https://news.google.com/rss/search?q=IPO+OR+acquisition+OR+%22merger%22+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN China|https://news.google.com/rss/search?q=China+economy+OR+%22China+tech%22+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Europe|https://news.google.com/rss/search?q=Europe+economy+OR+ECB+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Asia|https://news.google.com/rss/search?q=Japan+OR+Korea+OR+India+economy+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Elections|https://news.google.com/rss/search?q=election+when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Diplomacy|https://news.google.com/rss/search?q=%22foreign+minister%22+OR+sanctions+OR+summit+when:1d&hl=en-US&gl=US&ceid=US:en
+conflict|Radio Dabanga|https://www.dabangasudan.org/en/feed/rss
+conflict|AllAfrica|https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf
+conflict|Africa Report|https://www.theafricareport.com/feed/
+conflict|HumAngle|https://humanglemedia.com/feed/
+conflict|African Arguments|https://africanarguments.org/feed/
+conflict|Premium Times|https://www.premiumtimesng.com/feed
+conflict|M&G Africa|https://mg.co.za/rss/
+conflict|Middle East Eye|https://www.middleeasteye.net/rss
+conflict|The New Arab|https://www.newarab.com/rss
+conflict|Sudan War Monitor|https://sudanwarmonitor.com/feed
+conflict|Syria Direct|https://syriadirect.org/feed/
+google|GN Sudan|https://news.google.com/rss/search?q=Sudan%20RSF%20OR%20army%20OR%20famine%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Sahel|https://news.google.com/rss/search?q=Sahel%20OR%20Mali%20OR%20Niger%20OR%20%22Burkina%20Faso%22%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Congo|https://news.google.com/rss/search?q=%22DR%20Congo%22%20OR%20M23%20OR%20Goma%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Yemen|https://news.google.com/rss/search?q=Yemen%20OR%20Houthi%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Levant|https://news.google.com/rss/search?q=Gaza%20OR%20Lebanon%20OR%20Hezbollah%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Horn|https://news.google.com/rss/search?q=Ethiopia%20OR%20Eritrea%20OR%20Somalia%20OR%20Tigray%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN IranStrike|https://news.google.com/rss/search?q=Iran%20strike%20OR%20%22Iran%20nuclear%22%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN AfricaWar|https://news.google.com/rss/search?q=Africa%20coup%20OR%20militants%20OR%20massacre%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN SudanTrib|https://news.google.com/rss/search?q=site:sudantribune.com%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN IranIntl|https://news.google.com/rss/search?q=site:iranintl.com%20when:1d&hl=en-US&gl=US&ceid=US:en
+economy|Mining.com|https://www.mining.com/feed/
+economy|Rigzone|https://www.rigzone.com/news/rss/rigzone_latest.aspx
+google|GN Commodities|https://news.google.com/rss/search?q=gold%20OR%20copper%20OR%20lithium%20OR%20wheat%20price%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN OilGas|https://news.google.com/rss/search?q=OPEC%20OR%20LNG%20OR%20refinery%20when:1d&hl=en-US&gl=US&ceid=US:en
+politics|Semafor|https://www.semafor.com/rss.xml
+conflict|New Lines|https://newlinesmag.com/feed/
+conflict|Sahel Intelligence|https://sahel-intelligence.com/feed/
+conflict|Bellingcat|https://www.bellingcat.com/feed/
+tech|Rest of World|https://restofworld.org/feed/latest/
+tech|TechCabal|https://techcabal.com/feed/
+politics|Euractiv|https://www.euractiv.com/feed/
+politics|Euronews|https://www.euronews.com/rss?level=theme&name=news
+politics|DW Europe|https://rss.dw.com/rdf/rss-en-eu
+politics|Rio Times|https://www.riotimesonline.com/feed/
+politics|MercoPress|https://en.mercopress.com/rss/
+politics|Mexico News Daily|https://mexiconewsdaily.com/feed/
+google|GN Europe2|https://news.google.com/rss/search?q=%22European%20Union%22%20OR%20Brussels%20OR%20France%20OR%20Germany%20OR%20Poland%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN LatAm|https://news.google.com/rss/search?q=Brazil%20OR%20Mexico%20OR%20Argentina%20OR%20Chile%20election%20OR%20economy%20when:1d&hl=en-US&gl=US&ceid=US:en
+google|GN Andean|https://news.google.com/rss/search?q=Colombia%20OR%20Peru%20OR%20Venezuela%20OR%20Ecuador%20when:1d&hl=en-US&gl=US&ceid=US:en

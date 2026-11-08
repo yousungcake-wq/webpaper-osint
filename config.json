@@ -1,0 +1,12 @@
+{
+ "channel": "@webpaperHQ",
+ "owner_chat": "",
+ "min_score": 11.5,
+ "hot_score": 22.0,
+ "max_age_hours": 6,
+ "collect_every_s": 3600,
+ "post_every_s": 300,
+ "max_posts_per_hour": 10,
+ "quiet_empty": true,
+ "mode": "llm"
+}
