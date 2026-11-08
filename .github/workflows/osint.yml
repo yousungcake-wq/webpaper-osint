@@ -21,7 +21,7 @@ on:
 # 겹치면 상태 커밋이 충돌한다. 새 트리거가 오면 이전 블록을 정리하고 새로 시작한다.
 concurrency:
   group: osint-cycle
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -47,9 +47,9 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # 예약 실행은 회차 1개(5분마다 새로 뜬다). 수동 실행은 기본 230분짜리 블록 —
-          # 스케줄이 죽었을 때 손으로 채우는 비상용이다.
-          LOOP_MINUTES: ${{ github.event_name == 'schedule' && '0' || inputs.minutes || '230' }}
+          # 이 저장소의 GitHub 예약은 5분을 지키지 않는다(실측 39분 간격). 한 번 뜨면
+          # 45분을 스스로 돌아 그 공백을 메운다. 새 트리거가 오면 이전 블록은 취소된다.
+          LOOP_MINUTES: ${{ inputs.minutes || '45' }}
           COMMIT_STATE: "1"
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: |

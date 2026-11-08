@@ -6,59 +6,66 @@ GitHub Actions 로 옮긴 버전이다. 폰이 꺼지거나 재부팅돼도 계�
 ## 어떻게 도나
 
 ```
-cron(*/5분, 1분 오프셋)
-  └ run_once.py
-      1. state/posted.jsonl  → in-memory SQLite (최근 5일 게시 이력)
-      2. sources.txt 96개 중 이번 샤드(1/3)만 수집        ← 피드당 15분 주기
-      3. beats.classify_pending()  비트 분류(LLM 1콜)
-      4. osint.llm_publish()       비트·지역 균형 선택 → 본문 추출 → 요약 → 전송
-      5. 게시했으면 상태 1줄 append
-  └ 변경 있으면 state/ 커밋 (게시할 때만 발생, 하루 60~190회)
+GitHub 예약(*/5분)  →  run_once.py  →  한 회차
+   1. state/posted.jsonl → in-memory SQLite (최근 5일 게시 이력)
+   2. sources.txt 96개 중 이번 샤드(1/2)만 수집        ← 피드당 10분 주기
+   3. beats.classify_pending()  비트 분류(LLM 1콜)
+   4. osint.llm_publish()  비트·지역 균형 선택 → 본문 추출 → 요약 → 텔레그램 전송
+   5. 게시했으면 상태 1줄 append → 즉시 커밋
 ```
 
-- 게시 상한: 시간당 10건. `config.json`
-- 점수 하한: 11.5. `config.json`
-- 회차당 소요: 실측 50~70초
+- 게시 상한 시간당 10건, 점수 하한 11.5 (`config.json`)
+- 회차당 소요: 실측 5~20초 (GitHub 러너)
+- **비트 균형 레인이 비면** 점수 상위에서 필터 통과 첫 건을 쓰는 안전망이 있다
+  (`install_loose_pick`). 없으면 후보가 없어 채널이 조용히 멈춘다.
+
+## 트리거가 두 겹인 이유
+
+이 계정에서 GitHub 예약(cron)은 **새 저장소 등록 직후 약 90분간 발화하지 않았다.**
+(같은 설정의 깨끗한 테스트 저장소도 16분간 0회 → 저장소 문제가 아니라 계정/등록 지연)
+그래서 예약이 살아난 뒤에도 다음 두 가지를 함께 둔다.
+
+실측: 이 저장소의 `*/5` 예약은 실제로 39분 간격으로 떴다. 그래서 **한 번 뜨면 45분을
+스스로 도는 블록**으로 만들었고(`LOOP_MINUTES=45`), 새 트리거가 오면 이전 블록은 취소된다.
+
+| 트리거 | 주기 | 역할 |
+|---|---|---|
+| GitHub `schedule` | 명목 5분(실측 수십 분) | 블록을 계속 갈아끼워 공백을 막는다 |
+| 폰 스케줄 태스크 `OSINT 트리거(보조)` | 6회/일 | 예약이 오래 죽었을 때 블록을 다시 띄운다 |
+| `gh workflow run osint.yml -f minutes=230` | 수동 | 예약이 며칠 죽었을 때 4시간을 한 번에 채움 |
+
+주의: 블록을 계속 돌리면 러너를 하루 종일 쓰는 셈이라 GitHub 의 "프로젝트와 무관한
+연산" 금지 조항과는 거리가 있다. 문제가 되면 블록 길이를 줄이고 주기를 늘리거나
+VPS 로 옮기는 게 맞다.
 
 ## 최초 설정 (한 번만)
 
-1. **저장소 만들기** — Public 권장(공개 저장소는 Actions 무료·무제한).
-2. **Settings → Secrets and variables → Actions → New repository secret** 에 아래를 넣는다.
+1. 저장소는 Public (공개 저장소는 Actions 무료·무제한).
+2. **Settings → Secrets and variables → Actions** 에 등록:
 
    | 이름 | 값 |
    |---|---|
-   | `TELEGRAM_BOT_TOKEN` | 기존 봇 토큰 (폰에 설정된 것과 동일) |
-   | `GEMINI_API_KEY` | 폰에 설정된 값 |
-   | `GROQ_API_KEY` | 폰에 설정된 값 |
-   | `CEREBRAS_API_KEY` | (선택) |
-   | `MISTRAL_API_KEY` | (선택) |
-   | `OPENROUTER_API_KEY` | (선택) |
+   | `TELEGRAM_BOT_TOKEN` | 봇 토큰 |
+   | `GEMINI_API_KEY` | 요약 1순위 |
+   | `GROQ_API_KEY` | 요약 2순위 |
+   | `CEREBRAS_API_KEY` · `MISTRAL_API_KEY` · `OPENROUTER_API_KEY` | (선택) 폴백 |
 
-   LLM은 위 순서로 폴백한다. 하나만 있어도 돌고, 많을수록 한도에 안 걸린다.
-3. **Settings → Actions → General → Workflow permissions** 를
-   *Read and write permissions* 로 바꾼다. (상태 커밋에 필요)
-4. **Actions 탭 → OSINT Telegram bot → Run workflow** 로 한 번 수동 실행.
-   - `dry_run` 체크하면 채널에 보내지 않고 로그에만 본문을 찍는다. 처음엔 이걸로 확인.
-5. 정상이면 그대로 두면 5분마다 돈다.
-
-## 폰 봇 끄기 (중요)
-
-같은 채널에 두 곳이 쓰면 중복 게시된다. 이전 후 폰에서는
-`/var/minis/shared/osint` 의 데몬과 `OSINT 감시봇 유지` 스케줄 태스크를 멈춘다.
+3. **Settings → Actions → General → Workflow permissions** = *Read and write*
+   (상태 커밋에 필요)
 
 ## 문제 생겼을 때
 
 | 증상 | 볼 것 |
 |---|---|
-| 채널 침묵 | Actions 탭의 최근 run 로그. 초록인데 게시가 없으면 "이번 회차 게시 없음" — 후보가 필터에 걸린 것 |
+| 채널 침묵 | Actions 탭 최근 run. 초록인데 "게시 없음"이면 후보가 필터에 걸린 것 |
+| 예약 실행이 사라짐 | 저장소 활동이 60일 없으면 공개 저장소 예약이 자동 비활성. `keepalive.yml` 이 매주 커밋해 막는다 |
 | `llm: 실패` | LLM 키 한도. 다른 키를 secret 에 추가하면 폴백 |
-| 게시가 몰림 | GitHub cron 은 정각 부하 시 5~20분 지연될 수 있다. 정상 동작 |
-| 스케줄이 사라짐 | 공개 저장소 60일 무활동 시 자동 비활성. `keepalive.yml` 이 매주 커밋해 막는다 |
+| 중복 게시 | 폰 쪽 `/var/minis/shared/osint` 데몬이 살아 있는지 확인 (`pgrep -f osint.py`) |
 
 ## 파일
 
-- `run_once.py` — 회차 실행기(상태 복원·저장, 샤드 수집)
-- `osint.py` — 수집·채점·선택·전송 본체 (경로만 저장소 기준으로 수정)
+- `run_once.py` — 회차 실행기(상태 복원·저장, 샤드 수집, 자율 루프)
+- `osint.py` — 수집·채점·선택·전송 본체
 - `beats.py` — 비트 분류와 z점수·쿼터 배분
 - `llm.py` — Gemini→Mistral→Groq→OpenRouter 폴백 요약
 - `writer.py` — 본문 추출(JSON-LD·문단), 구글뉴스 URL 해석, 해요체 변환
