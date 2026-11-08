@@ -193,6 +193,12 @@ PRICE_LIST = re.compile(
     r"stock (tips|picks)|top gainers|top losers|multibagger|sensex|nifty|"
     r"samvat|buy or sell|should you buy|target price|stocks to (watch|buy))")
 
+# 저신호 외교 예의 기사 (조의·축하·생일). 전쟁 어휘가 제목에 있어 점수가 부풀지만
+# 국제정치적으로 읽을거리가 없다. (2026-11-08 이관 테스트: '정상이 부친상 조의' 33점 1위)
+COURTESY = re.compile(
+    r"(?i)(condol|mourn|tribute|sympath|congratulat|felicitat|birthday|"
+    r"greets? |extends? (greeting|wish)|anniversary of independence)")
+
 NOISE = ["celebrity", "football", "soccer", "cricket", "horoscope", "recipe",
          "royal family", "gossip", "obituar", "lottery", "weather forecast",
          "world cup", "premier league", "champions league", "box office",
@@ -229,6 +235,8 @@ def score_item(it, cat, now):
         pts -= 5                                  # 현지 통화·로컬 증시 위주 기사
     if PRICE_LIST.search(it["title"]):
         pts -= 9                                  # 시세 나열·추천 기사
+    if COURTESY.search(it["title"]):
+        pts -= 7                                  # 조의·축하 등 저신호 외교 예의
     return round(pts, 1)
 
 
