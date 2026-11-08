@@ -1,0 +1,7 @@
+version: 2
+# 액션을 커밋 SHA 로 고정했으므로, 갱신은 Dependabot 이 PR 로 올린다.
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
