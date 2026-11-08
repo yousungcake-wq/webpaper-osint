@@ -1,0 +1,26 @@
+name: Repo keepalive
+
+# 공개 저장소의 예약 워크플로는 "60일간 저장소 활동 없음"이면 자동 비활성된다.
+# 게시가 뜸한 주에도 스케줄이 살아 있도록 1주에 한 번 커밋을 남긴다.
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  touch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -e
+          mkdir -p state
+          echo "$(date -u '+%Y-%m-%d %H:%M') keepalive" >> state/heartbeat.txt
+          git config user.name  "osint-bot"
+          git config user.email "osint-bot@users.noreply.github.com"
+          git add state/heartbeat.txt
+          git commit -m "keepalive: $(date -u '+%Y-%m-%d')"
+          git push
