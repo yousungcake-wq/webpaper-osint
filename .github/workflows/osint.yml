@@ -18,10 +18,11 @@ on:
         type: string
         default: "330"
 
-# 회차가 20초 안에 끝나므로 겹치지 않는다. 혹시 겹치면 순서대로 실행한다.
+# 회차가 길어져(LLM 지연) 다음 트리거와 겹치면, 물고 있는 회차를 버리고 새로 시작한다.
+# 게시 직후 상태를 바로 커밋하므로 취소로 인한 중복 게시 위험은 몇 초 수준이다.
 concurrency:
   group: osint-cycle
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write

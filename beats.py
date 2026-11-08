@@ -169,7 +169,7 @@ PROMPT = """다음 뉴스 제목을 아래 비트 중 하나로 분류해라. �
 {titles}"""
 
 
-def _post(url, payload, headers, timeout=90):
+def _post(url, payload, headers, timeout=30):   # 5분 주기 안에 끝나야 한다 (2026-11-08: 90s×폴백이 회차를 5분 이상 물고 있었다)
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json",
                                           "User-Agent": UA, **headers})

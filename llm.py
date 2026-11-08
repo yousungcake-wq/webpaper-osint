@@ -38,7 +38,7 @@ UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/122.0 Mobile Safari/537.36")
 
 
-def _post(url, payload, headers, timeout=90):
+def _post(url, payload, headers, timeout=30):   # 5분 주기 안에 끝나야 한다 (2026-11-08: 90s×폴백이 회차를 5분 이상 물고 있었다)
     # UA 없이 보내면 Groq(Cerebras 등)가 Cloudflare 1010 으로 403 을 준다.
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json",
