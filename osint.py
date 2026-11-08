@@ -236,7 +236,7 @@ def score_item(it, cat, now):
     if PRICE_LIST.search(it["title"]):
         pts -= 9                                  # 시세 나열·추천 기사
     if COURTESY.search(it["title"]):
-        pts -= 7                                  # 조의·축하 등 저신호 외교 예의
+        pts = min(pts, 6.0)                       # 조의·축하 등 저신호 외교 예의 → 하한 미달로 탈락
     return round(pts, 1)
 
 

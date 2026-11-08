@@ -30,7 +30,7 @@ STATE_DIR = os.path.join(BASE, "state")
 STATE = os.path.join(STATE_DIR, "posted.jsonl")
 KEEP_DAYS = int(os.environ.get("KEEP_DAYS", "5"))
 DRY = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
-SHARDS = max(1, int(os.environ.get("SHARDS", "3")))
+SHARDS = max(1, int(os.environ.get("SHARDS", "2")))
 
 SCHEMA = [
     """CREATE TABLE items(
@@ -120,9 +120,42 @@ def shard_sources():
     return idx
 
 
+def install_loose_pick():
+    """비트 균형 레인이 비었을 때를 위한 안전망.
+
+    균형 배분은 '목표비에서 모자란 비트'가 있어야 후보를 낸다. 수집을 샤드로 나누면
+    회차당 후보 풀이 작아져서, 조건에 맞는 비트가 없으면 아무것도 못 고르고 침묵한다
+    (2026-11-07 폰에서 45분 공백 사고가 같은 원인이었다). 그럴 때만 점수 상위에서
+    필터를 통과하는 첫 건을 쓴다. 평상시 동작은 건드리지 않는다.
+    """
+    original = osint.pick
+
+    def pick(con, cfg):
+        row = original(con, cfg)
+        if row:
+            return row
+        cutoff = osint.now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
+        cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
+        recent = [r[0] for r in con.execute(
+            "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 80")]
+        df = osint.df_map(con)
+        for r in con.execute("""SELECT id,title,descr,url,feed,cat,ts,score FROM items
+                WHERE posted=0 ORDER BY score DESC LIMIT 40""").fetchall():
+            real = osint._candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
+            if real:
+                con.commit()
+                print(f"loose pick: {r[7]:.1f} {r[1][:60]}")
+                return (r[0], r[1], r[2], real) + tuple(r[4:8])
+        con.commit()
+        return None
+
+    osint.pick = pick
+
+
 def main():
     t0 = time.time()
     cfg = osint.conf()
+    install_loose_pick()
     con = make_con()
     n_state = load_state(con)
     print(f"state: 게시 이력 {n_state}건 (최근 {KEEP_DAYS}일)")
