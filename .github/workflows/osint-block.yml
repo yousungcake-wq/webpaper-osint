@@ -13,7 +13,7 @@ on:
         default: false
 
 concurrency:
-  group: osint-block-probe
+  group: osint-cycle
   cancel-in-progress: true
 
 permissions:
