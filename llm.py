@@ -154,8 +154,14 @@ def summarize(title, text, dry=False, thin=False):
     min_len = 60 if thin else 80
     if dry:
         return prompt
-    for attempt in range(2):
+    t_start = time.time()
+    # 재시도 없이 제공자 1순환. 2026-11-08: 2회 재시도 × 3개 제공자 × 90초 타임아웃이
+    # 겹치면 회차가 5분을 넘겨 다음 트리거와 충돌했다. 5분 주기에서는 빨리 포기하는 게 맞다.
+    for attempt in range(1):
         for name, fn in PROVIDERS:
+            if time.time() - t_start > 60:
+                print("[llm] 60초 예산 초과 — 이번 회차 요약 포기", flush=True)
+                return ""
             key = os.environ.get(name, "").strip()
             if not key or _cooling(name):
                 continue
@@ -181,9 +187,6 @@ def summarize(title, text, dry=False, thin=False):
                 if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
                     _COOLDOWN[name] = time.time() + 1800      # 30분간 건너뛴다
                 print(f"[{name}] {type(e).__name__}: {msg[:120]}", flush=True)
-        if attempt == 0:
-            import time
-            time.sleep(4)
     return ""
 
 

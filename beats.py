@@ -189,7 +189,7 @@ def _llm_labels(titles):
                       {"model": "openai/gpt-oss-120b", "temperature": 0,
                        "max_tokens": 2000, "reasoning_effort": "low",
                        "messages": [{"role": "user", "content": prompt}]},
-                      {"Authorization": f"Bearer {key}"})
+                      {"Authorization": f"Bearer {key}"}, timeout=20)
             out = r["choices"][0]["message"]["content"]
             if out and out.strip():
                 return _parse(out, len(titles))
@@ -203,7 +203,7 @@ def _llm_labels(titles):
                       "gemini-3-flash-preview:generateContent?key=" + key,
                       {"contents": [{"parts": [{"text": prompt}]}],
                        "generationConfig": {"temperature": 0, "maxOutputTokens": 2048}},
-                      {})
+                      {}, timeout=20)
             out = r["candidates"][0]["content"]["parts"][0]["text"]
             return _parse(out, len(titles))
         except Exception as e:
