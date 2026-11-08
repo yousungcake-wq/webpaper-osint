@@ -250,8 +250,17 @@ def main():
     # LOOP_MINUTES>0 이면 그 시간 동안 5분 간격으로 계속 돈다.
     # GitHub 스케줄이 이 계정에서 동작하지 않아, 한 번 트리거되면 몇 시간을
     # 스스로 돌게 만들었다(트리거는 폰 스케줄 태스크가 몇 시간에 한 번 nudges).
-    loop_min = int(os.environ.get("LOOP_MINUTES", "0"))
-    max_cycles = int(os.environ.get("MAX_CYCLES", "0"))
+    # 입력값은 워크플로 입력에서 온다(외부에서도 지정 가능). 숫자가 아니거나
+    # 과도하게 길면 기본값으로 되돌린다 — 잘못된 값으로 잡을 오래 물고 있지 않게.
+    try:
+        loop_min = int(str(os.environ.get("LOOP_MINUTES", "0")).strip() or 0)
+    except ValueError:
+        loop_min = 0
+    try:
+        max_cycles = int(str(os.environ.get("MAX_CYCLES", "0")).strip() or 0)
+    except ValueError:
+        max_cycles = 0
+    loop_min = max(0, min(loop_min, 340))
     deadline = time.time() + loop_min * 60
     n = 0
     while True:
