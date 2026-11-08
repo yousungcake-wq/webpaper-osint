@@ -10,7 +10,7 @@
 run_once.py          회차 실행기 (상태 복원 / 샤드 수집 / 자율 루프 / 상태 커밋)
 osint.py             엔진: 수집·채점·선택·전송·감사 (collect/score_item/pick/make_draft/llm_publish/audit)
 beats.py             비트 분류(TECH/FINANCE/CONFLICT/COMMODITY/ECONOMY/POLITICS) + z점수·쿼터·지역 균형
-llm.py               무료 LLM 요약 (Gemini → Mistral → Groq → Cerebras → OpenRouter)
+llm.py               무료 LLM 요약 (Gemini → Cerebras → Mistral → Groq → OpenRouter)
 writer.py            본문 추출(JSON-LD·문단) · 구글뉴스 URL 해석 · 해요체 변환
 news_fetch.py        RSS/Atom 파서 + Google News 쿼리
 sources.txt          96개 소스 (`분류|이름|URL`)
