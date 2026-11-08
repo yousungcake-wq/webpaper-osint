@@ -240,4 +240,11 @@ if __name__ == "__main__":
         main()
     except Exception:
         traceback.print_exc()
-        sys.exit(1)
+        sys.stdout.flush()
+        os._exit(1)
+    # 수집 스레드가 DNS(getaddrinfo)에서 멈추면 ThreadPoolExecutor 의 atexit 조인이
+    # 영원히 기다려 잡이 끝나지 않는다(2026-11-08: 게시는 끝났는데 run 이 15분 타임아웃까지
+    # in_progress 로 남았다). 상태 커밋은 이미 끝났으므로 프로세스를 확실히 종료한다.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
