@@ -4,7 +4,7 @@ name: OSINT Telegram bot
 # 범위+스텝(1-56/5) 표기는 등록이 안 되는 사례가 있어 명시적 목록으로 쓴다.
 on:
   schedule:
-    - cron: "2,7,12,17,22,27,32,37,42,47,52,57 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:
