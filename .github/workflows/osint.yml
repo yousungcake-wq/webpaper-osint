@@ -1,7 +1,9 @@
 name: OSINT Telegram bot
 
-# 정각(0,5,10...)은 GitHub 러너가 몰려 지연·드롭되기 쉬워 2분씩 밀었다.
-# 범위+스텝(1-56/5) 표기는 등록이 안 되는 사례가 있어 명시적 목록으로 쓴다.
+# 이 계정에서는 GitHub 예약(cron)이 실제로 발화하지 않는다(2026-11-08 검증:
+# 같은 설정의 새 저장소도 16분간 0회). 그래서 워크플로는 "트리거 1회 = 4시간 자율 실행"
+# 구조로 만들었고, 트리거는 폰 스케줄 태스크가 몇 시간에 한 번 보낸다.
+# cron 은 계정 워밍업 후 살아날 수 있으니 남겨둔다(발화하면 그냥 한 블록 더 돈다).
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -11,11 +13,15 @@ on:
         description: "게시하지 않고 본문 미리보기만"
         type: boolean
         default: false
+      minutes:
+        description: "이번 실행에서 계속 돌 시간(분)"
+        type: string
+        default: "230"
 
-# 한 번에 한 회차만. 상태 파일 커밋이 겹치지 않게 한다.
+# 겹치면 상태 커밋이 충돌한다. 새 트리거가 오면 이전 블록을 정리하고 새로 시작한다.
 concurrency:
   group: osint-cycle
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -23,7 +29,7 @@ permissions:
 jobs:
   cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 260
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +39,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run one cycle
+      - name: Run cycles
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -41,19 +47,10 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LOOP_MINUTES: ${{ inputs.minutes || '230' }}
+          COMMIT_STATE: "1"
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
-        run: python run_once.py
-
-      - name: Commit state
         run: |
-          set -e
-          if [ -z "$(git status --porcelain state/)" ]; then
-            echo "상태 변경 없음 — 커밋 생략"
-            exit 0
-          fi
           git config user.name  "osint-bot"
           git config user.email "osint-bot@users.noreply.github.com"
-          git add state/posted.jsonl
-          git commit -m "state: $(date -u '+%Y-%m-%d %H:%M') UTC"
-          git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          python run_once.py

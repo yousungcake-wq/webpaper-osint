@@ -16,6 +16,7 @@ import datetime as dt
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 import traceback
@@ -152,14 +153,57 @@ def install_loose_pick():
     osint.pick = pick
 
 
-def main():
+def commit_state():
+    """게시 직후 상태를 저장소에 커밋한다. 실패해도 다음 회차를 막지 않는다."""
+    if os.environ.get("COMMIT_STATE", "") not in ("1", "true", "yes"):
+        return
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
+
+    def run(args):
+        return subprocess.run(args, cwd=BASE, capture_output=True, text=True, timeout=180)
+
+    try:
+        run(["git", "add", "state/posted.jsonl"])
+        c = run(["git", "commit", "-m", f"state: {stamp} UTC"])
+        if c.returncode != 0:
+            return
+        run(["git", "pull", "--rebase", "--autostash", "-q"])
+        p = run(["git", "push", "-q"])
+        print("state push:", "ok" if p.returncode == 0 else (p.stderr or "")[:100])
+    except Exception as e:                      # 커밋 실패가 게시를 되돌리지는 않는다
+        print("git error:", e)
+
+
+def cycle():
+    """한 회차: 복원 → 수집 → 분류 → 선택 → 요약 → 게시 → 상태 저장."""
     t0 = time.time()
     cfg = osint.conf()
-    install_loose_pick()
     con = make_con()
     n_state = load_state(con)
-    print(f"state: 게시 이력 {n_state}건 (최근 {KEEP_DAYS}일)")
 
+    idx = shard_sources()
+    added, errors = osint.collect(con, hours=8)
+    print(f"[{dt.datetime.now(dt.timezone.utc):%H:%M}] collect +{added} err={len(errors)} "
+          f"(샤드 {idx}/{SHARDS})")
+    for e in errors[:3]:
+        print("  err:", e)
+
+    n_beat = beats.classify_pending(con)
+    got = osint.llm_publish(con, cfg)
+    if got and not DRY:
+        append_state(got, con, got.get("id"))
+        commit_state()
+        print(f"posted: {got.get('title', '')[:70]}")
+    elif got:
+        print(f"[DRY RUN] 게시 예정: {got.get('title', '')[:70]}")
+    else:
+        print("이번 회차 게시 없음")
+    print(f"  이력 {n_state}건 · 분류 {n_beat} · {time.time() - t0:.0f}s")
+    return got
+
+
+def main():
+    install_loose_pick()
     if DRY:
         def fake_send(text, chat=None, html=True):
             print("[DRY RUN] 전송 생략, 본문 미리보기 ↓")
@@ -167,33 +211,28 @@ def main():
             return True, None
         osint.send = fake_send
 
-    idx = shard_sources()
-    added, errors = osint.collect(con, hours=8)
-    print(f"collect: +{added}건, 오류 {len(errors)} (샤드 {idx}/{SHARDS})")
-    for e in errors[:5]:
-        print("  err:", e)
-
-    n_beat = beats.classify_pending(con)
-    print(f"classify: {n_beat}건")
-
-    got = osint.llm_publish(con, cfg)
-    if got and not DRY:
-        rid = got.get("id")
-        append_state(got, con, rid)
-        print(f"posted: {got.get('title', '')[:70]}")
-    elif got:
-        print(f"[DRY RUN] 게시 예정: {got.get('title', '')[:70]}")
-    else:
-        print("이번 회차 게시 없음")
-    print(f"elapsed: {time.time() - t0:.1f}s")
-
-    summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        with open(summary, "a", encoding="utf-8") as f:
-            f.write(f"### OSINT run\n\n- 수집 +{added} (오류 {len(errors)}, 샤드 {idx}/{SHARDS})\n"
-                    f"- 분류 {n_beat}\n"
-                    f"- 게시: {('**' + got.get('title', '')[:90] + '**') if got else '없음'}\n"
-                    f"- 소요 {time.time() - t0:.0f}s\n")
+    # LOOP_MINUTES>0 이면 그 시간 동안 5분 간격으로 계속 돈다.
+    # GitHub 스케줄이 이 계정에서 동작하지 않아, 한 번 트리거되면 몇 시간을
+    # 스스로 돌게 만들었다(트리거는 폰 스케줄 태스크가 몇 시간에 한 번 nudges).
+    loop_min = int(os.environ.get("LOOP_MINUTES", "0"))
+    max_cycles = int(os.environ.get("MAX_CYCLES", "0"))
+    deadline = time.time() + loop_min * 60
+    n = 0
+    while True:
+        try:
+            cycle()
+        except Exception:
+            traceback.print_exc()          # 한 회차 실패로 루프 전체를 죽이지 않는다
+        n += 1
+        if max_cycles and n >= max_cycles:
+            break
+        if loop_min <= 0:
+            break
+        wait = (int(time.time() // 300) + 1) * 300 - time.time()   # 다음 5분 경계
+        if time.time() + wait > deadline:
+            break
+        time.sleep(max(1.0, wait))
+    print(f"done: {n}회차")
 
 
 if __name__ == "__main__":
