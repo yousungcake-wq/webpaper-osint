@@ -52,7 +52,7 @@ cron-job.org (5분)  ──POST──▶  GitHub API
 |---|---|---|
 | cron-job.org → `workflow_dispatch` | **5분** | 주 트리거. 실측 17:00/17:05/17:10/17:15/17:20 정확 |
 | GitHub `schedule` (`*/5`) | 명목 5분 | **실측 30~39분 간격** — 이 저장소/계정에서 스로틀됨 |
-| 수동 `-f minutes=330` | 비상 | 예약이 며칠 죽었을 때 5시간 30분 자율 실행 |
+| `osint-block.yml` (수동) | 비상 | 예약이 며칠 죽었을 때 5시간 30분 자율 실행. **잡 타임아웃 355분** |
 
 > GitHub 공식 문서상 `schedule` 은 최소 5분 간격이며, 정각 부하 시 지연·드롭될 수 있다.
 > 이 계정에서는 신규 저장소 등록 직후 **약 90분간 0회 발화**했고, 이후에도 5분을 지키지
@@ -60,18 +60,25 @@ cron-job.org (5분)  ──POST──▶  GitHub API
 
 ### 2.2 워크플로 파라미터
 
+워크플로는 **두 개로 분리**되어 있다. 한 파일에 `minutes` 입력과 `timeout-minutes: 15` 를
+같이 두면 "5시간 돌려라 / 15분에 죽인다"가 충돌한다(2026-11-08 실제 모순, 아래 7장 참고).
+
 ```yaml
-concurrency: { group: osint-cycle, cancel-in-progress: true }
-permissions: { contents: write }          # 상태 커밋용
+# osint.yml — 5분 주기 단발
 timeout-minutes: 15
-env:
-  LOOP_MINUTES: ${{ inputs.minutes || '0' }}   # 0 = 회차 1개
-  COMMIT_STATE: "1"
-  DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+LOOP_MINUTES: "0"
+
+# osint-block.yml — 수동 비상용
+timeout-minutes: 355          # 330분 블록 + 여유, GitHub 잡 상한 360분
+LOOP_MINUTES: "330"
 ```
 
-- `LOOP_MINUTES=0` 이면 **회차 1개**만 실행하고 종료(현재 기본).
-- `LOOP_MINUTES=N` 이면 5분 경계에 맞춰 N분 동안 반복 실행(=블록 모드, 비상용).
+공통: `concurrency: { group: osint-cycle, cancel-in-progress: true }`,
+`permissions: { contents: write }`, `COMMIT_STATE: "1"`, `DRY_RUN`(수동 미리보기).
+
+- 블록은 일반 회차와 **같은 concurrency 그룹**이다. 크론이 살아 있으면 5분 뒤 다음
+  회차가 블록을 취소한다 = "크론이 죽었을 때만 의미 있는 비상구".
+- `LOOP_MINUTES=N` 이면 5분 경계에 맞춰 N분 동안 반복 실행.
 - `cancel-in-progress: true` — 회차가 길어져 다음 트리거와 겹치면 이전 회차를 버리고 새로 시작.
 - 입력값은 숫자 검증 + 상한 340분으로 클램프(`run_once.main`).
 
@@ -156,6 +163,10 @@ SQLite 파일(6.9MB)을 5분마다 커밋하면 히스토리가 하루 수 GB로
 | 로컬 증시·현지통화 | naira·peso·sensex | −5 |
 | 시세 나열 | "Gold Rates Today", "stocks to buy" | −9 |
 | **저신호 외교** | condol·mourn·congratulat·birthday | **점수 6.0 상한(사실상 탈락)** |
+
+**지역 채점**(2026-11-08 추가): 같은 LLM 콜에서 지역 라벨까지 받는다(추가 호출 없음).
+`kw_region` 키워드 판정은 폴백으로만 남는다. 60건 표본 실측 — 키워드만 쓸 때 `GLOBAL` 37%,
+LLM 라벨 적용 후 **15%**.
 
 `COURTESY` 상한은 2026-11-08 추가. "정상이 부친상 조의" 기사가 `niger +3 / junta +3 /
 coup +3` 중첩으로 **33점 1위**를 차지한 사례가 있었다.
@@ -310,6 +321,7 @@ coup +3` 중첩으로 **33점 1위**를 차지한 사례가 있었다.
 | 11-08 | 회차가 5분 초과 | LLM 2회 재시도 × 3제공자 × 90초 | 60초 예산·재시도 제거·30초 타임아웃 |
 | 11-08 | 예약이 90분간 0회 | 신규 저장소/계정 스로틀(테스트 저장소로 재현) | 외부 크론 도입 |
 | 11-08 | 투자 분석 기사 게시 | 후보 없을 때 점수 상위만 훑음 | 정크 도메인·티커 패턴 + 3·4차 레인 품질 하한 |
+| 11-08 | **비상구가 15분에 잘림** | `minutes=330` 과 `timeout-minutes: 15` 가 한 파일에 공존 | 워크플로 분리. 블록으로 **34분 생존 실측 확인** |
 
 ---
 
@@ -347,7 +359,7 @@ coup +3` 중첩으로 **33점 1위**를 차지한 사례가 있었다.
 
 | 문제 | 수치 | 원인 |
 |---|---|---|
-| **지역 분류 공백** | `GLOBAL` 136건(43%) | 키워드 기반 지역 분류. LLM 보정 없음 |
+| **지역 분류 공백** | `GLOBAL` 136건(43%) — *과거 데이터*. 2026-11-08부터 LLM 지역 라벨 도입(표본 37%→15%) |
 | **남미 부재** | `LATAM` 2건(0.6%) | 남미 소스 자체가 적고 Google News 쿼리 의존 |
 | **지역 정치 기사 혼입** | 나이지리아·필리핀 사례 반복 | 규모(국제적 파급) 판정 축이 없음 |
 | **음차 오류** | "지가와 주 더체"(Jigawa, Dutse) | 번역·해요체 변환이 고유명사를 그대로 음차 |
