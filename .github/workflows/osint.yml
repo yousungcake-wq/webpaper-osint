@@ -16,7 +16,7 @@ on:
       minutes:
         description: "이번 실행에서 계속 돌 시간(분)"
         type: string
-        default: "230"
+        default: "330"
 
 # 겹치면 상태 커밋이 충돌한다. 새 트리거가 오면 이전 블록을 정리하고 새로 시작한다.
 concurrency:
@@ -29,7 +29,7 @@ permissions:
 jobs:
   cycle:
     runs-on: ubuntu-latest
-    timeout-minutes: 260
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,9 +47,10 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # 이 저장소의 GitHub 예약은 5분을 지키지 않는다(실측 39분 간격). 한 번 뜨면
-          # 45분을 스스로 돌아 그 공백을 메운다. 새 트리거가 오면 이전 블록은 취소된다.
-          LOOP_MINUTES: ${{ inputs.minutes || '45' }}
+          # 이 저장소의 GitHub 예약은 5분을 지키지 않는다(실측 30~39분 간격).
+          # 한 번 뜨면 5시간 30분을 스스로 돌아, 예약이 몇 시간 멈춰도 채널이 비지 않게 한다.
+          # 새 트리거가 오면 이전 블록은 취소되고 새 블록이 시작된다.
+          LOOP_MINUTES: ${{ inputs.minutes || '330' }}
           COMMIT_STATE: "1"
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: |
