@@ -344,10 +344,13 @@ CONFLICT_WORDS = re.compile(
 JUNK_TITLE = re.compile(
     r"(?i)(\barchives?\b|home ?page|\bsubscribe\b|\blog ?in\b|sign in|"
     r"\bobituar|horoscope|weather forecast|lottery|\bstock quote|"
+    r"stock market analysis|market analysis|\btradingview\b|"
+    r"\([A-Z]{1,5}:[A-Z]{2,3}\)|"                     # 티커 표기 (IPO:CA)
     r"^https?://|^\.|\|\s*$)")
 JUNK_DOMAIN = ("tvoneusa", "energynow", "journalarta", "montel", "britannica",
                "azernews", "postandcourier", "notus", "timesofindia",
-               "finance.biggo.com", "podcast")
+               "finance.biggo.com", "podcast", "mlq.ai", "simplywall.st",
+               "investing.com", "marketbeat", "fool.com")
 
 # 종목 추천·애널리스트 목표가·팟캐스트 요약 — 뉴스가 아니라 투자 광고다.
 # (2026-11-08 표본: '3 US Bank Stocks Built For Higher Interest Rates', 'Korea Tires target price…')

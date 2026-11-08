@@ -122,12 +122,14 @@ def shard_sources():
 
 
 def install_loose_pick():
-    """비트 균형 레인이 비었을 때를 위한 안전망.
+    """균형 레인이 비었을 때를 위한 3·4차 안전망.
 
-    균형 배분은 '목표비에서 모자란 비트'가 있어야 후보를 낸다. 수집을 샤드로 나누면
-    회차당 후보 풀이 작아져서, 조건에 맞는 비트가 없으면 아무것도 못 고르고 침묵한다
-    (2026-11-07 폰에서 45분 공백 사고가 같은 원인이었다). 그럴 때만 점수 상위에서
-    필터를 통과하는 첫 건을 쓴다. 평상시 동작은 건드리지 않는다.
+    균형 배분은 '목표비에서 모자란 비트'가 있어야 후보를 낸다. 5분 주기로 돌면
+    목표비가 이미 채워져 있어 아무것도 못 고르는 회차가 잦다(그때 침묵하면 채널이 빈다).
+    그래서 두 단계를 더 둔다.
+      3차 — 최근 게시가 가장 적은 비트부터, 그 비트의 상위 후보
+      4차 — 그래도 없으면 점수 상위에서 품질 하한(최소점수+3)을 넘는 첫 건
+    평상시(1·2차) 동작은 건드리지 않는다.
     """
     original = osint.pick
 
@@ -135,18 +137,52 @@ def install_loose_pick():
         row = original(con, cfg)
         if row:
             return row
+
         cutoff = osint.now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
         cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
         recent = [r[0] for r in con.execute(
             "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 80")]
         df = osint.df_map(con)
+
+        def usable(r):
+            title = r[1] or ""
+            if (r[7] or 0) < cfg["min_score"] + 3:
+                return False
+            if (osint.PRICE_LIST.search(title) or osint.LOW_VALUE.search(title)
+                    or osint.LOW_VALUE_ANY.search(title) or osint.COURTESY.search(title)
+                    or osint.NOISE_TITLE.search(title)):
+                return False
+            return True
+
+        def take(r):
+            real = osint._candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
+            if not real:
+                return None
+            con.commit()
+            return (r[0], r[1], r[2], real) + tuple(r[4:8])
+
+        # 3차: 최근 게시가 적은 비트부터
+        counts = beats.beat_counts(con, window=12)
+        for b in sorted(beats.BEATS, key=lambda x: counts.get(x, 0)):
+            cands = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score FROM items
+                    WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8""", (b,)).fetchall()
+            for r in cands:
+                if not usable(r):
+                    continue
+                got = take(r)
+                if got:
+                    print(f"pick(3차·{b} 최근{counts.get(b, 0)}건): {r[7]:.1f} {r[1][:50]}")
+                    return got
+
+        # 4차: 점수 상위
         for r in con.execute("""SELECT id,title,descr,url,feed,cat,ts,score FROM items
                 WHERE posted=0 ORDER BY score DESC LIMIT 40""").fetchall():
-            real = osint._candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
-            if real:
-                con.commit()
-                print(f"loose pick: {r[7]:.1f} {r[1][:60]}")
-                return (r[0], r[1], r[2], real) + tuple(r[4:8])
+            if not usable(r):
+                continue
+            got = take(r)
+            if got:
+                print(f"pick(4차·점수): {r[7]:.1f} {r[1][:50]}")
+                return got
         con.commit()
         return None
 
