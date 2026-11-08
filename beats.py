@@ -163,8 +163,10 @@ def kw_beat(title, cat=""):
 
 
 # ── LLM 배치 분류 ────────────────────────────────────────────────
-PROMPT = """다음 뉴스 제목을 아래 비트 중 하나로 분류해라. 설명 없이 "번호:비트" 형식으로만 한 줄씩 답한다.
+PROMPT = """다음 뉴스 제목을 비트와 지역으로 분류해라. 설명 없이 "번호:비트:지역" 형식으로만 한 줄씩 답한다.
 비트: TECH(기술·AI·반도체·플랫폼), FINANCE(금융·시장·금리·실적·M&A), CONFLICT(전쟁·분쟁·안보·테러), COMMODITY(원자재·에너지·광물·곡물), ECONOMY(거시경제·무역·고용·물가), POLITICS(국제정치·선거·외교), OTHER(연예·스포츠·생활)
+지역: EUROPE(유럽·러시아 서부), LATAM(중남미·카리브), US(미국·캐나다), ASIA(동아시아·남아시아·동남아·중앙아·오세아니아), AFRICA(사하라 이남 아프리카), MIDDLE_EAST(중동·북아프리카·이란·이스라엘), GLOBAL(여러 지역에 걸친 사안이거나 본문의 주체가 특정 국가가 아님)
+사건이 일어난 곳이 아니라 **기사의 주체** 기준으로 고른다.
 
 {titles}"""
 
@@ -211,15 +213,34 @@ def _llm_labels(titles):
     return None
 
 
+_BIT_RE = re.compile(r"(TECH|FINANCE|CONFLICT|COMMODITY|ECONOMY|POLITICS|OTHER)", re.I)
+LLM_REGIONS = ("EUROPE", "LATAM", "US", "ASIA", "AFRICA", "MIDDLE_EAST", "GLOBAL")
+
+
 def _parse(text, n):
+    """'번호:비트:지역' → [(beat, region|None)].
+
+    지역이 없으면 None 으로 두고 호출부에서 키워드 분류(kw_region)로 메운다.
+    (2026-11-08: 비트만 물어보던 것을 같은 콜에서 지역까지 받도록 확장 — GLOBAL 43% 대응)
+    """
     labels = [None] * n
     for line in text.splitlines():
-        m = re.match(r"\s*(\d+)\s*[:.\)]\s*(TECH|FINANCE|CONFLICT|COMMODITY|ECONOMY|POLITICS|OTHER)",
-                     line.strip(), re.I)
-        if m:
-            i = int(m.group(1)) - 1
-            if 0 <= i < n:
-                labels[i] = m.group(2).upper()
+        m = re.match(r"\s*(\d+)\s*[:.\)]\s*(.+)", line.strip())
+        if not m:
+            continue
+        i = int(m.group(1)) - 1
+        if not (0 <= i < n):
+            continue
+        rest = m.group(2)
+        bm = _BIT_RE.search(rest)
+        if not bm:
+            continue
+        region = None
+        for r in LLM_REGIONS:
+            if re.search(r"\b" + r + r"\b", rest, re.I):
+                region = r
+                break
+        labels[i] = (bm.group(1).upper(), region)
     if sum(1 for x in labels if x) < n * 0.6:
         return None
     return labels
@@ -267,8 +288,11 @@ def classify_pending(con, per_beat=10, max_total=60):
 
     n = 0
     for k, (_id, kw) in enumerate(picked):
-        beat = labels[k] if labels and labels[k] else kw
-        con.execute("UPDATE items SET beat=?, beat_src='llm' WHERE id=?", (beat, _id))
+        lab = labels[k] if labels and labels[k] else None
+        beat = (lab[0] if lab else None) or kw
+        region = (lab[1] if lab else None) or kw_region(titles[k])
+        con.execute("UPDATE items SET beat=?, beat_src='llm', region=? WHERE id=?",
+                    (beat, region, _id))
         n += 1
     con.commit()
     return n

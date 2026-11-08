@@ -1,9 +1,8 @@
 name: OSINT Telegram bot
 
-# 이 계정에서는 GitHub 예약(cron)이 실제로 발화하지 않는다(2026-11-08 검증:
-# 같은 설정의 새 저장소도 16분간 0회). 그래서 워크플로는 "트리거 1회 = 4시간 자율 실행"
-# 구조로 만들었고, 트리거는 폰 스케줄 태스크가 몇 시간에 한 번 보낸다.
-# cron 은 계정 워밍업 후 살아날 수 있으니 남겨둔다(발화하면 그냥 한 블록 더 돈다).
+# 한 번 뜨면 회차 1개. 트리거는 외부 크론(cron-job.org, 5분)이 주고,
+# GitHub 자체 예약은 이 계정에서 스로틀되어 보조로만 둔다.
+# 예약이 며칠 죽었을 때는 osint-block.yml(수동, 5시간 30분)을 쓴다.
 on:
   schedule:
     - cron: "*/5 * * * *"
@@ -13,13 +12,7 @@ on:
         description: "게시하지 않고 본문 미리보기만"
         type: boolean
         default: false
-      minutes:
-        description: "계속 돌 시간(분). 0=회차 1개(기본), 330=비상용 5시간 30분 블록"
-        type: string
-        default: "0"
 
-# 회차가 길어져(LLM 지연) 다음 트리거와 겹치면, 물고 있는 회차를 버리고 새로 시작한다.
-# 게시 직후 상태를 바로 커밋하므로 취소로 인한 중복 게시 위험은 몇 초 수준이다.
 concurrency:
   group: osint-cycle
   cancel-in-progress: true
@@ -30,6 +23,7 @@ permissions:
 jobs:
   cycle:
     runs-on: ubuntu-latest
+    # 회차는 20~50초. 길어져도 다음 트리거가 취소하므로 짧게 잡아 이상 동작을 빨리 드러낸다.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -40,7 +34,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run cycles
+      - name: Run one cycle
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -48,9 +42,7 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          # 기본은 회차 1개 — 외부 크론(cron-job.org)이 5분마다 정확히 밀어준다.
-          # 비상시에만 `-f minutes=330` 으로 5시간 30분 자율 블록을 띄운다.
-          LOOP_MINUTES: ${{ inputs.minutes || '0' }}
+          LOOP_MINUTES: "0"          # 1회차
           COMMIT_STATE: "1"
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: |

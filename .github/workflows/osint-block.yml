@@ -1,0 +1,50 @@
+name: OSINT block (emergency)
+
+# 비상용. 외부 크론이 며칠 죽었을 때 손으로 한 번 눌러 5시간 30분을 채운다.
+#   gh workflow run osint-block.yml
+# 일반 워크플로(osint.yml)와 같은 concurrency 그룹이라, 크론이 살아 있으면
+# 5분 뒤 다음 회차가 이 블록을 취소한다. 즉 "크론이 죽었을 때만 의미가 있다."
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "게시하지 않고 본문 미리보기만"
+        type: boolean
+        default: false
+
+concurrency:
+  group: osint-cycle
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  block:
+    runs-on: ubuntu-latest
+    # 330분 블록 + 여유. GitHub 잡 상한은 6시간(360분)이다.
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Run block
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          LOOP_MINUTES: "330"        # 5분 간격 × 66회
+          COMMIT_STATE: "1"
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
+        run: |
+          git config user.name  "osint-bot"
+          git config user.email "osint-bot@users.noreply.github.com"
+          python run_once.py

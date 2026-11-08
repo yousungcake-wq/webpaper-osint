@@ -524,7 +524,7 @@ def pick(con, cfg):
         df = {}
 
     
-    sql = """SELECT id,title,descr,url,feed,cat,ts,score,beat FROM items
+    sql = """SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
         WHERE posted=0 AND (beat=? OR (COALESCE(beat,'')=? AND cat=?))
         ORDER BY score DESC LIMIT 30"""
     cat_hint = {"TECH": "tech", "FINANCE": "finance", "CONFLICT": "conflict",
@@ -546,7 +546,7 @@ def pick(con, cfg):
                 if r[4] not in bad]
         cand.sort(key=lambda r: -(r[7] * (0.55 + 0.45 * health.get(r[4], 0.8))))
         for r in cand[:15]:
-            reg = _b.kw_region(r[1])
+            reg = (r[9] if len(r) > 9 and r[9] else _b.kw_region(r[1]))   # LLM 지역 라벨 우선
             pool.append((_b.z_score(r[7], b, stats), b, r, reg))
     pool.sort(key=lambda x: -x[0])
 
