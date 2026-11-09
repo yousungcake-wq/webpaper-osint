@@ -12,7 +12,9 @@
 - 소스는 한 번에 다 긁지 않고 SHARDS 등분해 번갈아 긁는다.
   96개 × 288회/일 = 27,648 요청은 과하다. 3등분이면 피드당 15분 주기.
 """
+import contextlib
 import datetime as dt
+import glob
 import json
 import os
 import sqlite3
@@ -25,6 +27,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE)
 
 import beats  # noqa: E402
+import filters  # noqa: E402
 import osint  # noqa: E402
 
 STATE_DIR = os.path.join(BASE, "state")
@@ -39,7 +42,7 @@ SCHEMA = [
         key TEXT UNIQUE, title TEXT, descr TEXT, url TEXT,
         feed TEXT, cat TEXT, ts TEXT, first_seen TEXT,
         score REAL, posted INTEGER DEFAULT 0, posted_at TEXT, note TEXT,
-        beat TEXT, beat_src TEXT, region TEXT)""",
+        beat TEXT, beat_src TEXT, region TEXT, cu TEXT, summary TEXT)""",
     "CREATE TABLE tr(key TEXT PRIMARY KEY, ko TEXT)",
     "CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE gnurl(gn TEXT PRIMARY KEY, real TEXT, at TEXT)",
@@ -55,19 +58,42 @@ def make_con():
     return con
 
 
+POSTS_DIR = os.path.join(STATE_DIR, "posts")
+
+
+def _state_files():
+    """상태 파일 목록. state/posts/<날짜>/<시각>-<해시>.jsonl + 옛 posted.jsonl.
+
+    왜 파일을 쪼개는가: 두 회차가 겹치면 같은 파일 끝에 동시에 append 해
+    rebase 가 **충돌**한다. 충돌한 push 는 조용히 실패하고 그 게시 기록이 사라져
+    다음 회차가 같은 기사를 다시 올린다(2026-11-09 06:50 사고).
+    건마다 파일이 다르면 충돌이 원천적으로 없다.
+    """
+    out = [STATE] if os.path.exists(STATE) else []
+    if os.path.isdir(POSTS_DIR):
+        for d in sorted(os.listdir(POSTS_DIR)):
+            sub = os.path.join(POSTS_DIR, d)
+            if not os.path.isdir(sub):
+                continue
+            for fn in sorted(os.listdir(sub)):
+                if fn.endswith(".jsonl"):
+                    out.append(os.path.join(sub, fn))
+    return out
+
+
 def _rows():
-    if not os.path.exists(STATE):
-        return []
     out = []
-    with open(STATE, encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except Exception:
-                continue
+    for path in _state_files():
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    out.append(json.loads(line))
+                except Exception:
+                    continue
+    out.sort(key=lambda d: d.get("a") or "")
     return out
 
 
@@ -76,34 +102,53 @@ def load_state(con):
     rows = _rows()
     cutoff = (osint.now_utc() - dt.timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d %H:%M UTC")
     keep = [d for d in rows if (d.get("a") or "") >= cutoff]
-    if len(keep) != len(rows):                      # 잘라냈으면 파일도 줄인다
-        with open(STATE, "w", encoding="utf-8") as f:
-            for d in keep:
-                f.write(json.dumps(d, ensure_ascii=False) + "\n")
+    # 오래된 날짜 폴더는 통째로 지운다 (파일 경로에 날짜가 있다)
+    if os.path.isdir(POSTS_DIR):
+        cday = cutoff[:10]
+        for d in sorted(os.listdir(POSTS_DIR)):
+            if d < cday and os.path.isdir(os.path.join(POSTS_DIR, d)):
+                for fn in os.listdir(os.path.join(POSTS_DIR, d)):
+                    with contextlib.suppress(OSError):
+                        os.remove(os.path.join(POSTS_DIR, d, fn))
+                with contextlib.suppress(OSError):
+                    os.rmdir(os.path.join(POSTS_DIR, d))
     for d in keep:
         con.execute(
             """INSERT OR IGNORE INTO items(key,title,descr,url,feed,cat,ts,first_seen,
-                score,posted,posted_at,note,beat,beat_src,region)
-               VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)""",
+                score,posted,posted_at,note,beat,beat_src,region,cu,summary)
+               VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)""",
             (d.get("k", ""), d.get("t", ""), "", d.get("u", ""), d.get("f", ""), d.get("c", ""),
              "", d.get("a", ""), d.get("s", 0), d.get("a", ""), d.get("n"),
-             d.get("b", ""), "state", d.get("r", "")))
+             d.get("b", ""), "state", d.get("r", ""),
+             d.get("cu") or filters.canon_url(d.get("u", "")), d.get("x", "")))
     con.commit()
     return len(keep)
 
 
 def append_state(d, con, row_id):
-    """게시 1건을 상태 파일 끝에 붙인다."""
-    r = con.execute("SELECT beat, region, key, cat FROM items WHERE id=?", (row_id,)).fetchone() or ("", "", "", "")
+    """게시 1건을 **제 파일**에 기록한다 (충돌 없는 append).
+
+    state/posts/<날짜>/<시각>-<키>.jsonl — 회차가 겹쳐도 같은 파일을 건드리지 않는다.
+    요약문(x)과 정규화 주소(cu)도 같이 남긴다. 다음 회차의 중복 판정 재료다.
+    """
+    r = con.execute("SELECT beat, region, key, cat, summary, cu FROM items WHERE id=?",
+                    (row_id,)).fetchone() or ("", "", "", "", "", "")
     beat = r[0] or beats.kw_beat(d.get("title", ""), d.get("cat", ""))
     region = r[1] or beats.kw_region(d.get("title", ""))
-    rec = {"k": r[2] or "", "u": (d.get("url") or "")[:300], "t": (d.get("title") or "")[:180],
+    now = osint.now_utc()
+    url = d.get("url") or ""
+    rec = {"k": r[2] or "", "u": url[:300], "cu": r[5] or filters.canon_url(url),
+           "t": (d.get("title") or "")[:180],
            "f": (d.get("feed") or "")[:40], "c": r[3] or d.get("cat", ""),
            "b": beat, "r": region, "s": d.get("score", 0),
-           "a": osint.now_utc().strftime("%Y-%m-%d %H:%M UTC")}
-    os.makedirs(STATE_DIR, exist_ok=True)
-    with open(STATE, "a", encoding="utf-8") as f:
+           "x": (r[4] or "")[:1200],
+           "a": now.strftime("%Y-%m-%d %H:%M UTC")}
+    sub = os.path.join(POSTS_DIR, now.strftime("%Y-%m-%d"))
+    os.makedirs(sub, exist_ok=True)
+    path = os.path.join(sub, f"{now.strftime('%H%M%S')}-{(r[2] or 'x')[:8]}.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return path
 
 
 def shard_sources():
@@ -189,23 +234,43 @@ def install_loose_pick():
     osint.pick = pick
 
 
+def _git(args):
+    return subprocess.run(args, cwd=BASE, capture_output=True, text=True, timeout=180)
+
+
+def sync_state():
+    """회차 시작 전에 원격 상태를 당겨온다.
+
+    5분 전 회차가 방금 올린 글을 이 회차가 모르면 같은 기사를 또 올린다
+    (2026-11-09 06:50 — 13초 간격 이중 게시). 그래서 선택 **전에** 최신 상태를 본다.
+    """
+    r = _git(["git", "pull", "--rebase", "--autostash", "-q", "origin", "main"])
+    if r.returncode != 0:
+        print("state sync:", (r.stderr or r.stdout or "")[:120])
+    return r.returncode == 0
+
+
 def commit_state():
     """게시 직후 상태를 저장소에 커밋한다. 실패해도 다음 회차를 막지 않는다."""
     if os.environ.get("COMMIT_STATE", "") not in ("1", "true", "yes"):
         return
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M")
-
-    def run(args):
-        return subprocess.run(args, cwd=BASE, capture_output=True, text=True, timeout=180)
-
     try:
-        run(["git", "add", "state/posted.jsonl"])
-        c = run(["git", "commit", "-m", f"state: {stamp} UTC"])
+        _git(["git", "add", "state"])
+        c = _git(["git", "commit", "-m", f"state: {stamp} UTC"])
         if c.returncode != 0:
+            print("state: 커밋할 변경 없음")
             return
-        run(["git", "pull", "--rebase", "--autostash", "-q"])
-        p = run(["git", "push", "-q"])
-        print("state push:", "ok" if p.returncode == 0 else (p.stderr or "")[:100])
+        for attempt in range(4):            # 겹친 회차와의 push 경쟁은 재시도로 푼다
+            _git(["git", "pull", "--rebase", "--autostash", "-q"])
+            p = _git(["git", "push", "-q"])
+            if p.returncode == 0:
+                print("state push: ok")
+                return
+            time.sleep(2 + 3 * attempt)
+            print(f"state push 재시도 {attempt + 1}: {(p.stderr or '')[:90]}")
+        # 여기까지 왔으면 이 기록은 원격에 없다 → 다음 회차 pull 때 합쳐진다.
+        print("state push FAILED — 원격 미반영")
     except Exception as e:                      # 커밋 실패가 게시를 되돌리지는 않는다
         print("git error:", e)
 
@@ -214,6 +279,7 @@ def cycle():
     """한 회차: 복원 → 수집 → 분류 → 선택 → 요약 → 게시 → 상태 저장."""
     t0 = time.time()
     cfg = osint.conf()
+    sync_state()                     # 선택 전에 원격 최신 상태를 본다
     con = make_con()
     n_state = load_state(con)
 

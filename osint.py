@@ -21,6 +21,7 @@ CONF = f"{BASE}/config.json"
 NEWSDIR = BASE
 sys.path.insert(0, NEWSDIR)
 import news_fetch as nf  # noqa: E402
+import filters as flt  # noqa: E402
 
 DEFAULT_CONF = {
     "channel": "@webpaperHQ",
@@ -61,7 +62,12 @@ def db():
         key TEXT UNIQUE, title TEXT, descr TEXT, url TEXT,
         feed TEXT, cat TEXT, ts TEXT, first_seen TEXT,
         score REAL, posted INTEGER DEFAULT 0, posted_at TEXT, note TEXT,
-        beat TEXT, region TEXT)""")
+        beat TEXT, region TEXT, cu TEXT, summary TEXT)""")
+    for col in ("cu", "summary"):                 # 기존 DB 마이그레이션
+        try:
+            con.execute(f"ALTER TABLE items ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass
     con.execute("""CREATE TABLE IF NOT EXISTS tr(key TEXT PRIMARY KEY, ko TEXT)""")
     con.execute("""CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)""")
     con.execute("""CREATE TABLE IF NOT EXISTS gnurl(gn TEXT PRIMARY KEY, real TEXT, at TEXT)""")
@@ -287,8 +293,10 @@ def collect(con, hours=8):
                 # 같은 사건을 다른 매체가 쓴 경우: 점수만 갱신
                 # 같은 URL 이 이미 (게시된 것으로) 들어 있으면 같은 기사다.
                 # 제목이 살짝 바뀌면 key 가 달라져 중복을 놓친다(2026-11-09: 4시간 20분 간격 재게시).
-                if it["url"] and con.execute(
-                        "SELECT 1 FROM items WHERE url=?", (it["url"],)).fetchone():
+                # 주소는 정규화해서 본다 — ?utm=, /amp, 끝 슬래시만 다른 같은 글을 잡는다.
+                cu = flt.canon_url(it["url"])
+                if cu and con.execute(
+                        "SELECT 1 FROM items WHERE cu=? AND posted=1", (cu,)).fetchone():
                     continue
                 row = con.execute("SELECT id, score FROM items WHERE key=?", (key,)).fetchone()
                 sc = score_item(it, cat, now)
@@ -299,11 +307,11 @@ def collect(con, hours=8):
                     continue
                 # 다른 매체의 유사 제목(중복 사건) 억제
                 con.execute("""INSERT OR IGNORE INTO items
-                    (key,title,descr,url,feed,cat,ts,first_seen,score)
-                    VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (key,title,descr,url,feed,cat,ts,first_seen,score,cu)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)""",
                             (key, title, it["desc"][:400], it["url"], disp, cat,
                              it["ts"].strftime("%Y-%m-%d %H:%M UTC") if it["ts"] else "",
-                             now.strftime("%Y-%m-%d %H:%M UTC"), sc))
+                             now.strftime("%Y-%m-%d %H:%M UTC"), sc, cu))
                 added += 1
                 seen += 1
     con.execute("INSERT INTO runs(at,kind,ok,items,errors) VALUES(?,?,?,?,?)",
@@ -450,6 +458,25 @@ def same_event(a, b, df, n_docs=1800):
 
 _FEED_BAD = {"at": 0.0, "set": set()}
 
+def dup_body(con, body, hours=72, thr=0.22):
+    """생성된 요약문이 최근 게시분과 같은 사건인가 (교차 매체 중복).
+
+    영문 제목·URL은 매체마다 다르지만 한국어 요약은 거의 같아진다.
+    실측(2026-11-09, 채널 100건 = 4,950쌍): p99.5 = 0.117, 실제 중복 쌍 = 0.444.
+    임계값 0.22 는 오탐이 사실상 없는 지점이다(0.20 이상 쌍은 4,950쌍 중 3쌍).
+    """
+    if not body or len(body) < 40:
+        return None
+    cutoff = (now_utc() - dt.timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M UTC")
+    rows = con.execute(
+        """SELECT summary FROM items
+           WHERE posted=1 AND COALESCE(summary,'')<>'' AND posted_at>=?
+           ORDER BY posted_at DESC LIMIT 250""", (cutoff,)).fetchall()
+    for (prev,) in rows:
+        if flt.overlap(body, prev) >= thr:
+            return prev
+    return None
+
 def bad_feeds(con, min_attempts=5, ratio=0.65, ttl=600):
     """본문 추출이 계속 실패하는 피드(페이월·JS 페이지)를 뽑는다.
 
@@ -503,6 +530,14 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         con.execute("UPDATE items SET posted=1, note='expired' WHERE id=?", (_id,))
         return None
     if sc < min_score:
+        return None
+    # 라운드업·오피니언·종목추천은 내용이 섞여서 요약이 사고를 낸다.
+    # (2026-11-09: 금리 기사 요약에 F1 브라질 우승이 붙었다 — Rio Times Big Read)
+    reason = flt.is_digest(title, url)
+    if reason:
+        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (reason, _id))
+        con.commit()
+        log(f"{reason}: {title[:50]}")
         return None
     dup_of = next((t for t in recent if similar(title, t) > 0.45 or same_event(title, t, df)), None)
     if dup_of:
@@ -955,7 +990,16 @@ def make_draft(con, cfg):
             page = writer.fetch_html(url)
             paras = writer.paragraphs(page)
         except Exception:
-            paras = []
+            page, paras = None, []
+        # 본문 페이지의 발행일로 마지막 검증 — 피드가 재게시·갱신 날짜를 주면
+        # 몇 주 전 글이 '방금'으로 들어온다(2026-11-09 '2주 전 기사' 경로).
+        if page:
+            pd = nf.page_date(page)
+            if pd and (now_utc() - pd) > dt.timedelta(hours=48):
+                con.execute("UPDATE items SET posted=1, note='stale_page' WHERE id=?", (_id,))
+                con.commit()
+                log(f"stale_page({(now_utc() - pd).days}일): {title[:45]}")
+                continue
         text = " ".join(paras)[:4000]
         thin = False
         if len(text) < 300:
@@ -1071,13 +1115,24 @@ def _llm_publish_locked(con, cfg, llm):
     if not body:
         log("llm: 실패, 초안 유지")
         return None
+    # 요약문 수준 중복 차단 — 매체·제목이 달라도 같은 사건이면 여기서 걸린다.
+    prev = dup_body(con, body)
+    if prev:
+        con.execute("UPDATE items SET posted=1, note='dup_body' WHERE id=?", (d["id"],))
+        con.commit()
+        try:
+            os.remove(dpath or f"{QUEUE}/{d['id']}.json")
+        except OSError:
+            pass
+        log(f"dup_body: {d['title'][:40]} ≒ {prev[:40]}")
+        return None
     srcs = d["sources"][:3]
     links = "\n".join(f'· <a href="{esc(x["url"])}">{esc(x["feed"])}</a>' for x in srcs)
     text = f"{esc(body)}\n\n<blockquote expandable><b>출처</b>\n{links}</blockquote>"
     ok, err = send(text, cfg["channel"])
     if ok:
-        con.execute("UPDATE items SET posted=1, posted_at=?, note=NULL WHERE id=?",
-                    (now_utc().strftime("%Y-%m-%d %H:%M UTC"), d["id"]))
+        con.execute("UPDATE items SET posted=1, posted_at=?, note=NULL, summary=? WHERE id=?",
+                    (now_utc().strftime("%Y-%m-%d %H:%M UTC"), body, d["id"]))
         con.commit()
         try:
             os.remove(dpath or f"{QUEUE}/{d['id']}.json")
@@ -1121,10 +1176,13 @@ def _send_draft_locked(con, draft_path, msg_file):
     srcs = d.get("sources") or [{"feed": d["feed"], "url": d["url"]}]
     links = "\n".join(f'· <a href="{esc(x["url"])}">{esc(x["feed"])}</a>' for x in srcs[:3])
     text = f"{esc(body)}\n\n<blockquote expandable><b>출처</b>\n{links}</blockquote>"
+    prev = dup_body(con, body)
+    if prev:
+        return False, f"dup_body ≒ {prev[:30]}"
     ok, err = send(text, conf()["channel"])
     if ok:
-        con.execute("UPDATE items SET posted=1, posted_at=?, note=NULL WHERE id=?",
-                    (now_utc().strftime("%Y-%m-%d %H:%M UTC"), d["id"]))
+        con.execute("UPDATE items SET posted=1, posted_at=?, note=NULL, summary=? WHERE id=?",
+                    (now_utc().strftime("%Y-%m-%d %H:%M UTC"), body, d["id"]))
         con.commit()
         os.remove(draft_path)
         log(f"posted(model): {d['title'][:60]}")

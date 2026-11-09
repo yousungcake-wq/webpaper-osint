@@ -71,13 +71,42 @@ Gram 관심사: **국제분쟁 — 특히 아프리카·중동의 저보도 분�
 4. **안전망(`install_loose_pick`)** — 균형 레인이 비면 점수 상위 40건에서 필터 통과 첫 건을 쓴다.
    없으면 후보가 없어 조용히 침묵한다(폰 시절 45분 공백 사고의 원인).
 
-## 중복 판정
+## 중복 판정 — 4겹 (2026-11-09 강화)
 
-제목 자카드 0.45만으로는 부족해 `same_event()` 를 쓴다.
-- `toks()` 에 어간 축약(`_stem`: ing/ed/ies/ly/s) — kill/killed, strike/strikes, Houthi/Houthis 를 묶는다.
-- 판정: 자카드 > 0.45 **또는** 공통토큰 ≥ 4 **또는** 공통토큰 ≥ 3 & (사상자 어휘 | 자카드 ≥ 0.30)
-  **또는** 희귀토큰(df ≤ 2%) 2개 이상.
-- 과잉 차단은 감수한다(같은 공습 3연타보다 낫다). `dup:` 로그로 추적한다.
+한 겹으로는 계속 새는 구멍이 있었다. 실측으로 확인한 구멍마다 한 겹씩 막았다.
+
+1. **URL 정규화** (`filters.canon_url`) — `?utm=`, `/amp`, 끝 슬래시, `www.` 차이를 같은 주소로 본다.
+   이전엔 문자열 완전일치라 같은 글을 다른 주소로 받으면 그대로 통과했다.
+   (`items.cu` 컬럼, 수집 단계와 후보 단계 양쪽에서 확인)
+2. **제목 기반** `same_event()` — 제목 자카드 0.45 + 어간 축약 + 사상자 어휘 + 희귀토큰.
+   - `toks()` 에 어간 축약(`_stem`: ing/ed/ies/ly/s) — kill/killed, strike/strikes, Houthi/Houthis 를 묶는다.
+   - 판정: 자카드 > 0.45 **또는** 공통토큰 ≥ 4 **또는** 공통토큰 ≥ 3 & (사상자 어휘 | 자카드 ≥ 0.30)
+     **또는** 희귀토큰(df ≤ 2%) 2개 이상.
+3. **요약문 유사도** (`osint.dup_body`) — **생성된 한국어 요약**을 최근 72시간 게시분 250건과 비교.
+   매체가 달라 영문 제목이 달라도 사건이 같으면 요약이 거의 같아진다.
+   실측(채널 100건 = 4,950쌍): p99.5 = 0.117, 실제 중복 쌍 = 0.444 / 0.254. **임계값 0.22**.
+   (2026-11-09: AI 랠리·아시아 증시 반등이 55분 간격으로 두 번 — 제목 유사도 0.16으로 통과했다)
+4. **발행 기록** — 게시 1건 = 파일 1개(`state/posts/<날짜>/<시각>-<키>.jsonl`).
+   이전엔 모두 `state/posted.jsonl` 한 파일에 append 해서, 회차가 겹치면 rebase 충돌 →
+   push 조용히 실패 → 기록 유실 → 다음 회차 재게시. 06:50 사고(13초 간격 이중 게시)가 이것이다.
+
+과잉 차단은 감수한다(같은 사건 3연타보다 낫다). `dup:`·`dup_body:`·`digest:`·`stale_page:` 로그로 추적한다.
+
+## 품질 게이트 — 라운드업·오피니언·종목추천 (`filters.is_digest`)
+
+한 페이지에 여러 사건을 섞은 **라운드업**은 요약이 섞여 사고를 낸다.
+2026-11-09 실측: Rio Times `The Big Read Brazil` 를 요약했더니 금리 동결 기사에 F1 브라질 우승이 붙었다.
+같은 페이지가 06:50·07:30 두 번 게시되기도 했다(다음 날 같은 사실이 다른 URL로 다시 올라오는 구조).
+
+| 종류 | 판정 | 예 |
+|---|---|---|
+| `digest` | 제목/URL에 daily brief·the big read·live blog·markets wrap·what to know 등 | Rio Times Big Read, Rio Daily Brief, MEE live blog, Bloomberg Markets Wrap |
+| `opinion` | URL에 `/opinion/`·`/commentary/`, 제목 `, By 홍길동`·`Opinion:` | Premium Times "Any lessons from America's midterm elections?, By …" |
+| `stockpick` | stock pick·stocks to buy·top picks·market outlook | "BUA Cement, Unilever, Jaiz Bank top stock pick this week" |
+
+**발행일 최종 검증** — 본문 페이지의 `datePublished`(JSON-LD/meta/`<time>`)를 읽어 48시간 초과면 `stale_page` 로 폐기.
+피드가 갱신·재게시 날짜를 주면 몇 주 전 글이 '방금'으로 들어오기 때문이다.
+같은 이유로 `parse_feed` 는 `<published>` 를 `<updated>` 보다 우선한다(`updated` 는 최후 수단).
 
 ## 메시지 형태
 
@@ -119,3 +148,18 @@ DM: `python3 /var/minis/shared/osint/osint.py notify --file /tmp/report.txt`
 - 2026-11-06: 폰 `workspace/` → `shared/osint/` 이사, SQLite 상태.
 - 2026-11-07: 단일 점수 랭킹 → 비트 분류·균형 배분, 중복 판정 강화, 무료 LLM 폴백.
 - 2026-11-08: 지역 축 + 품질 필터, 폰 실행 폐기 → **GitHub Actions 이전**.
+- 2026-11-09: URL 정규화·요약문 유사도·라운드업 게이트·발행일 검증, 상태 파일 분할.
+
+## 참고한 오픈소스 (같은 문제를 푼 프로젝트)
+
+| 프로젝트 | 가져온 아이디어 |
+|---|---|
+| [Thysrael/Horizon](https://github.com/Thysrael/Horizon) | 후보 묶음을 **한 번의 LLM 호출**로 '같은 사건' 그룹핑 → 대표 1건 유지, 나머지는 출처만 병합. 우리 `dup_body` 의 상위 버전(비용은 회차당 1콜) |
+| [Rongronggg9/RSS-to-Telegram-Bot](https://github.com/Rongronggg9/RSS-to-Telegram-Bot) | RSS→텔레그램 전달의 기본기: 구독별 필터, 미디어 처리, 실패 재시도 |
+| [nkanaev/yarr](https://github.com/nkanaev/yarr) · [miniflux/v2](https://github.com/miniflux/v2) | 피드 리더의 상태 관리·키 정규화(`guid`/`link` 기반 중복) |
+| [adbar/trafilatura](https://github.com/adbar/trafilatura) | 본문·메타데이터 추출 — 지금은 자체 추출기(`writer.py`). 페이월 실패가 잦아지면 교체 후보 1순위 |
+| [fhamborg/news-please](https://github.com/fhamborg/news-please) | 뉴스 전용 크롤러·추출기 (발행일 파싱이 강하다) |
+
+공통 교훈: **중복은 '글' 단위가 아니라 '사건' 단위로 판정해야 하고, 그 판정 재료는 본문·요약이어야 한다.**
+URL·제목만 보는 필터는 매체가 늘어날 때마다 반드시 샌다.
+

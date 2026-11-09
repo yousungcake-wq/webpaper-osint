@@ -82,6 +82,36 @@ def norm_title(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
+_JSON_DATE = re.compile(r'"date(?:Published|Modified)"\s*:\s*"([^"]+)"')
+_META_DATE = re.compile(
+    r'<meta[^>]+(?:property|name)="(?:article:published_time|article:modified_time|'
+    r'og:published_time|date|pubdate)"[^>]+content="([^"]+)"', re.I)
+_META_DATE2 = re.compile(
+    r'<meta[^>]+content="([^"]+)"[^>]+(?:property|name)="(?:article:published_time|date)"', re.I)
+_TIME_TAG = re.compile(r'<time[^>]+datetime="([^"]+)"', re.I)
+
+
+def page_date(html_bytes):
+    """기사 페이지의 발행시각. 피드가 준 날짜가 못 미덥거나 없을 때의 최종 검증용.
+
+    왜 필요한가: 피드는 재게시·갱신 날짜를 주는 경우가 있고(특히 라운드업),
+    그 값만 믿으면 몇 주 전 글이 '방금'으로 들어온다. 본문 페이지의
+    datePublished 는 그 글의 원 발행일이라 훨씬 정직하다.
+    """
+    if not html_bytes:
+        return None
+    if isinstance(html_bytes, bytes):
+        s = html_bytes.decode("utf-8", "ignore")
+    else:
+        s = html_bytes
+    for rx in (_JSON_DATE, _META_DATE, _META_DATE2, _TIME_TAG):
+        for m in rx.finditer(s[:400000]):
+            d = _ts(m.group(1))
+            if d:
+                return d
+    return None
+
+
 def _txt(el):
     return re.sub(r"\s+", " ", (el.text or "")).strip() if el is not None else ""
 
@@ -136,6 +166,7 @@ def parse_feed(data):
         if _local(el.tag) not in ("item", "entry"):
             continue
         d = {"title": "", "desc": "", "url": "", "ts": None, "orig_source": ""}
+        dates = {}
         for ch in el:
             t = _local(ch.tag)
             if t == "title":
@@ -147,10 +178,17 @@ def parse_feed(data):
                 href = ch.get("href") or _txt(ch)
                 if href and not d["url"]:
                     d["url"] = href.strip()
-            elif t in ("pubdate", "published", "updated", "date"):
-                d["ts"] = d["ts"] or _ts(_txt(ch))
+            elif t in ("pubdate", "published", "date", "updated"):
+                dates.setdefault(t, _ts(_txt(ch)))
             elif t == "source":
                 d["orig_source"] = _clean(_txt(ch), 60)
+        # 발행일 우선. <updated> 는 글을 다시 손댈 때 갱신되므로 **최후 수단**이다.
+        # 2026-11-09: updated 를 먼저 집던 탓에 오래된 기사가 '방금 뜬 글'로 둔갑해
+        # 6시간 나이 필터를 통과했다(2주 전 기사 게시의 한 경로).
+        for k in ("published", "pubdate", "date", "updated"):
+            if dates.get(k):
+                d["ts"] = dates[k]
+                break
         if not d["title"]:
             continue
         if not d["url"]:
