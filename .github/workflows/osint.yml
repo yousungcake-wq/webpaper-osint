@@ -15,7 +15,7 @@ on:
 
 concurrency:
   group: osint-cycle
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -24,7 +24,7 @@ jobs:
   cycle:
     runs-on: ubuntu-latest
     # 회차는 20~50초. 길어져도 다음 트리거가 취소하므로 짧게 잡아 이상 동작을 빨리 드러낸다.
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

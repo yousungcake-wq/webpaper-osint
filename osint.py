@@ -285,6 +285,11 @@ def collect(con, hours=8):
                     cat = "conflict"
                 key = hashlib.sha1(nf.norm_title(title)[:90].encode()).hexdigest()[:16]
                 # 같은 사건을 다른 매체가 쓴 경우: 점수만 갱신
+                # 같은 URL 이 이미 (게시된 것으로) 들어 있으면 같은 기사다.
+                # 제목이 살짝 바뀌면 key 가 달라져 중복을 놓친다(2026-11-09: 4시간 20분 간격 재게시).
+                if it["url"] and con.execute(
+                        "SELECT 1 FROM items WHERE url=?", (it["url"],)).fetchone():
+                    continue
                 row = con.execute("SELECT id, score FROM items WHERE key=?", (key,)).fetchone()
                 sc = score_item(it, cat, now)
                 if row:

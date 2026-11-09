@@ -85,7 +85,7 @@ def load_state(con):
             """INSERT OR IGNORE INTO items(key,title,descr,url,feed,cat,ts,first_seen,
                 score,posted,posted_at,note,beat,beat_src,region)
                VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)""",
-            (d.get("k", ""), d.get("t", ""), "", "", d.get("f", ""), d.get("c", ""),
+            (d.get("k", ""), d.get("t", ""), "", d.get("u", ""), d.get("f", ""), d.get("c", ""),
              "", d.get("a", ""), d.get("s", 0), d.get("a", ""), d.get("n"),
              d.get("b", ""), "state", d.get("r", "")))
     con.commit()
@@ -97,7 +97,7 @@ def append_state(d, con, row_id):
     r = con.execute("SELECT beat, region, key, cat FROM items WHERE id=?", (row_id,)).fetchone() or ("", "", "", "")
     beat = r[0] or beats.kw_beat(d.get("title", ""), d.get("cat", ""))
     region = r[1] or beats.kw_region(d.get("title", ""))
-    rec = {"k": r[2] or "", "t": (d.get("title") or "")[:180],
+    rec = {"k": r[2] or "", "u": (d.get("url") or "")[:300], "t": (d.get("title") or "")[:180],
            "f": (d.get("feed") or "")[:40], "c": r[3] or d.get("cat", ""),
            "b": beat, "r": region, "s": d.get("score", 0),
            "a": osint.now_utc().strftime("%Y-%m-%d %H:%M UTC")}
