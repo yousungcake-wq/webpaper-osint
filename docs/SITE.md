@@ -17,8 +17,8 @@ cron-job.org (5분)
           ├─ feedgen.py → site/feed.json    ← 출력 2(사이트 데이터)
           └─ git commit & push (state + site)
                     │
-                    ▼  push: site/** 변경
-          GitHub Actions: site.yml → Pages 배포(≈15~35초)
+                    ▼  같은 워크플로 안에서 이어서
+          job: deploy → Pages 배포(≈30초)   ※ site.yml 은 사람이 site/ 를 고칠 때만
                     │
                     ▼
    site/index.html (정적 1장) ── fetch ./feed.json (같은 출처)
@@ -33,7 +33,15 @@ cron-job.org (5분)
 
 이었다. 그래서 같은 출처에서 `./feed.json` 을 읽는다. CORS 문제도, CDN 5분 캐시도 없다.
 Pages 는 **배포할 때 CDN 캐시를 비우므로** 게시 → 커밋 → 배포가 끝나면 즉시 새 데이터다.
-실측: push 10:43:02 → 워크플로 완료 10:43:35 → 라이브 피드 갱신 확인 10:43:52.
+실측: 게시·커밋 11:05:33 → 배포 포함 회차 종료 11:06:17 → 라이브 피드 일치 확인 11:06:51.
+
+### 배포를 `osint.yml` 안에서 하는 이유 (함정 2개)
+
+1. **`GITHUB_TOKEN` 으로 푸시한 커밋은 다른 워크플로를 트리거하지 않는다**(재귀 방지).
+   그래서 `site.yml` 의 `paths: site/**` 필터로는 봇의 커밋에 배포가 붙지 않는다.
+   → `osint.yml` 에 `deploy` 잡을 넣고 `needs: cycle` + `if: changed` 로 잇는다.
+2. **`actions/checkout` 의 기본 ref 는 이벤트 시점 SHA.** 그대로 두면 방금 커밋된 피드가 아니라
+   **직전 커밋**을 배포한다(11:00 실측: live 가 10:50 피드로 갱신됨). → `with: ref: main`.
 
 ---
 

@@ -4,7 +4,8 @@
 GitHub Actions 로 옮긴 버전이다. 폰이 꺼지거나 재부팅돼도 계속 돈다.
 
 **웹사이트도 같이 나간다: <https://yousungcake-wq.github.io/webpaper-osint/>**
-같은 회차가 텔레그램에 게시하면서 `site/feed.json` 을 갱신 → 커밋 → Pages 자동 배포(≈30초).
+같은 회차가 텔레그램에 게시하면서 `site/feed.json` 을 갱신 → 커밋 → **같은 워크플로의 deploy 잡**이
+Pages 로 배포(≈30초). (봇이 `GITHUB_TOKEN` 으로 푸시하면 다른 워크플로가 안 돈다 — 그래서 배포를 안에 넣었다.)
 사이트는 같은 출처의 `./feed.json` 을 읽으므로 게시 후 1분 안에 반영된다.
 구조·무료 한도·한계는 [`docs/SITE.md`](docs/SITE.md).
 
