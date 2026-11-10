@@ -304,6 +304,56 @@ def cycle():
     return got
 
 
+
+# ── 조용한 정지 감시 (2026-11-10) ─────────────────────────────────────────────
+# 워크플로가 success 로 끝나도 "게시 없음"이면 채널은 조용하다. 실제로 11-08 에
+# 3시간 공백이 있었고 아무도 몰랐다. LLM 두 곳이 동시에 429/503 이면 요약이 안 나와
+# 게시가 멈추는데, 로그에만 남고 알림은 없다.
+# → 마지막 게시가 ALERT_GAP_MIN 분보다 오래되면 **워크플로를 실패시킨다**(GitHub 알림).
+#   3시간에 한 번만 운다(마커 파일). 블록 모드(LOOP>0)는 스스로 도는 중이라 건너뛴다.
+ALERT_GAP_MIN = int(os.environ.get("ALERT_GAP_MIN", "90") or 90)
+ALERT_EVERY_H = 3
+
+
+def _last_post_utc():
+    """state/posts/<날짜>/<HHMMSS>-<해시>.jsonl 파일명에서 마지막 게시 시각을 얻는다."""
+    best = None
+    for d in glob.glob(os.path.join(STATE_DIR, "posts", "*")):
+        day = os.path.basename(d)
+        for f in glob.glob(os.path.join(d, "*.jsonl")):
+            hhmmss = os.path.basename(f).split("-")[0]
+            if len(hhmmss) != 6 or not hhmmss.isdigit():
+                continue
+            try:
+                t = dt.datetime.strptime(day + hhmmss, "%Y-%m-%d%H%M%S")
+            except ValueError:
+                continue
+            if best is None or t > best:
+                best = t
+    return best
+
+
+def watchdog():
+    last = _last_post_utc()
+    if last is None:
+        return
+    age = (dt.datetime.utcnow() - last).total_seconds() / 60
+    if age < ALERT_GAP_MIN:
+        return
+    marker = os.path.join(STATE_DIR, "last_alert.txt")
+    try:
+        prev = dt.datetime.fromisoformat(open(marker).read().strip())
+    except Exception:
+        prev = None
+    now = dt.datetime.utcnow()
+    if prev and (now - prev).total_seconds() < ALERT_EVERY_H * 3600:
+        return
+    os.makedirs(STATE_DIR, exist_ok=True)
+    open(marker, "w").write(now.isoformat(timespec="seconds"))
+    commit_state()        # 마커를 저장소에 남겨야 다음 러너가 3시간 스로틀을 지킨다
+    print(f"::error::게시 정지 {age:.0f}분 — 마지막 게시 {last} UTC", flush=True)
+    sys.exit(1)
+
 def main():
     install_loose_pick()
     if DRY:
@@ -335,6 +385,8 @@ def main():
         except Exception:
             traceback.print_exc()          # 한 회차 실패로 루프 전체를 죽이지 않는다
         n += 1
+        if loop_min <= 0:
+            watchdog()                     # 단발 회차에서만. 블록은 스스로 도는 중이다
         if max_cycles and n >= max_cycles:
             break
         if loop_min <= 0:
