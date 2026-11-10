@@ -4,7 +4,8 @@
 GitHub Actions 로 옮긴 버전이다. 폰이 꺼지거나 재부팅돼도 계속 돈다.
 
 **웹사이트도 같이 나간다: <https://yousungcake-wq.github.io/webpaper-osint/>**
-같은 회차가 텔레그램에 게시하면서 `data/feed.json` 을 갱신하고, 정적 페이지가 그걸 읽는다.
+같은 회차가 텔레그램에 게시하면서 `site/feed.json` 을 갱신 → 커밋 → Pages 자동 배포(≈30초).
+사이트는 같은 출처의 `./feed.json` 을 읽으므로 게시 후 1분 안에 반영된다.
 구조·무료 한도·한계는 [`docs/SITE.md`](docs/SITE.md).
 
 ## 어떻게 도나
@@ -76,7 +77,8 @@ VPS 로 옮기는 게 맞다.
 - `writer.py` — 본문 추출(JSON-LD·문단), 구글뉴스 URL 해석, 해요체 변환
 - `news_fetch.py` — RSS/Atom 파서
 - `sources.txt` — 96개 소스 (`분류|이름|URL`)
-- `feedgen.py` — `state/posts` → `data/feed.json` (사이트용, 최근 5일·최대 300건)
+- `feedgen.py` — `state/posts` → `site/feed.json` (사이트용, 최근 5일·최대 300건)
 - `backfill_head.py` — 예전 게시물에 한국어 제목 채우기(1회성)
-- `site/index.html` — 웹사이트 (HTML·CSS·JS 한 파일)
+- `site/index.html` — 웹사이트 (HTML·CSS·JS 한 파일, 검색·필터 포함)
+- `site/feed.json` — 사이트 데이터(생성물)
 - `docs/SITE.md` — 사이트 구조·무료 한도·한계
