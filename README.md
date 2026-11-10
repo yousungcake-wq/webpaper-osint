@@ -74,7 +74,7 @@ VPS 로 옮기는 게 맞다.
 - `run_once.py` — 회차 실행기(상태 복원·저장, 샤드 수집, 자율 루프)
 - `osint.py` — 수집·채점·선택·전송 본체
 - `beats.py` — 비트 분류와 z점수·쿼터 배분
-- `llm.py` — Gemini→Mistral→Groq→OpenRouter 폴백 요약
+- `llm.py` — Gemini→**NVIDIA NIM**→Mistral→Groq→OpenRouter 폴백 요약
 - `writer.py` — 본문 추출(JSON-LD·문단), 구글뉴스 URL 해석, 해요체 변환
 - `news_fetch.py` — RSS/Atom 파서
 - `sources.txt` — 96개 소스 (`분류|이름|URL`)

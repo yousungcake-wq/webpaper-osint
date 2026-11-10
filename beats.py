@@ -239,6 +239,17 @@ def _llm_labels(titles):
             return _parse(out, len(titles))
         except Exception as e:
             print(f"[beats] gemini {type(e).__name__}: {str(e)[:100]}", flush=True)
+
+    # 3) NVIDIA NIM — Gemini/Groq 가 동시에 429/503 인 날이 잦다(2026-11-10 실측).
+    try:
+        import llm
+        out = llm.call_nvidia(os.environ.get("NVIDIA_API_KEY", "").strip(), prompt)
+        if out:
+            labels = _parse(out, len(titles))
+            if labels:
+                return labels
+    except Exception as e:
+        print(f"[beats] nvidia {type(e).__name__}: {str(e)[:100]}", flush=True)
     return None
 
 
