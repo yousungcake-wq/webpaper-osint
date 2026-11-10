@@ -218,35 +218,6 @@ NOISE = ["celebrity", "football", "soccer", "cricket", "horoscope", "recipe",
          "fashion week", "reality show", "award show"]
 
 
-_FB_CACHE = {}
-
-
-def fb_adj(feed="", beat=""):
-    """주간 점검 반응(👎/👍)에서 나온 점수 보정. feedback.py apply 가 config.json 에 쓴다.
-
-    값은 feedback.compute() 가 표본 수로 가중해 만든다(소스별 -4~+2). 비트 보정은
-    2026-11-10 없앴지만 옛 config 를 읽을 수 있게 키는 남겨 둔다. 창(기본 21일)을
-    벗어난 반응은 사라지므로 보정도 같이 옛 상태로 돌아간다. 읽기 실패는 0.
-    """
-    try:
-        mt = os.path.getmtime(os.path.join(NEWSDIR, "config.json"))
-    except OSError:
-        mt = 0
-    fb = _FB_CACHE.get("v") if _FB_CACHE.get("mt") == mt else None
-    if fb is None:
-        _FB_CACHE["mt"] = mt
-        try:
-            fb = conf().get("feedback") or {}
-        except Exception:
-            fb = {}
-        _FB_CACHE["v"] = fb
-    if not fb:
-        return 0.0
-    v = (fb.get("src", {}).get(feed, 0.0) or 0.0) + \
-        (fb.get("beat", {}).get(beat, 0.0) or 0.0)
-    return max(-5.0, min(2.5, v))        # 소스+비트가 겹쳐도 총합은 이 범위
-
-
 def score_item(it, cat, now):
     """관심사(국제정치·테크·금융·경제) 중심 채점."""
     txt = (it["title"] + " " + it.get("desc", "")).lower()
@@ -278,6 +249,11 @@ def score_item(it, cat, now):
         pts -= 9                                  # 시세 나열·추천 기사
     if COURTESY.search(it["title"]):
         pts = min(pts, 6.0)                       # 조의·축하 등 저신호 외교 예의 → 하한 미달로 탈락
+    try:                                          # 취향 축 (반응 라벨에서 학습, taste.py)
+        import taste
+        pts += taste.adj(it["title"], it.get("descr", ""))
+    except Exception:
+        pass
     return round(pts, 1)
 
 
@@ -575,7 +551,7 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     if ts and ts < cutoff_s:
         con.execute("UPDATE items SET posted=1, note='expired' WHERE id=?", (_id,))
         return None
-    if sc + fb_adj(feed, r[8] if len(r) > 8 else "") < min_score:
+    if sc < min_score:
         return None
     # 라운드업·오피니언·종목추천은 내용이 섞여서 요약이 사고를 낸다.
     # (2026-11-09: 금리 기사 요약에 F1 브라질 우승이 붙었다 — Rio Times Big Read)
@@ -585,6 +561,15 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         con.commit()
         log(f"{reason}: {title[:50]}")
         return None
+    try:                                     # 취향 축에서 여러 개가 겹쳐 밀리는 글
+        import taste
+        if taste.blocked(title, descr):
+            con.execute("UPDATE items SET posted=1, note='taste' WHERE id=?", (_id,))
+            con.commit()
+            log(f"taste: {title[:50]}")
+            return None
+    except Exception:
+        pass
     dup_of = next((t for t in recent if similar(title, t) > 0.45 or same_event(title, t, df)), None)
     if dup_of:
         con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (_id,))
@@ -630,11 +615,10 @@ def pick(con, cfg):
     for b in _b.BEATS:
         cand = [r for r in con.execute(sql, (b, "", cat_hint.get(b, "-"))).fetchall()
                 if r[4] not in bad]
-        cand.sort(key=lambda r: -((r[7] + fb_adj(r[4])) *
-                                  (0.55 + 0.45 * health.get(r[4], 0.8))))
+        cand.sort(key=lambda r: -(r[7] * (0.55 + 0.45 * health.get(r[4], 0.8))))
         for r in cand[:15]:
             reg = (r[9] if len(r) > 9 and r[9] else _b.kw_region(r[1]))   # LLM 지역 라벨 우선
-            pool.append((_b.z_score(r[7] + fb_adj(r[4]), b, stats), b, r, reg))
+            pool.append((_b.z_score(r[7], b, stats), b, r, reg))
     pool.sort(key=lambda x: -x[0])
 
     recent_c = _b.beat_counts(con, window=5)

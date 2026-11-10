@@ -9,15 +9,21 @@
  "max_posts_per_hour": 10,
  "quiet_empty": true,
  "mode": "llm",
- "feedback": {
-  "src": {
-   "Al-Monitor": 0.4,
-   "Guardian World": -0.8,
-   "Africa Report": -1.7,
-   "FormatBiz": -2.9,
-   "IntelliNews": -2.9
+ "taste": {
+  "axes": {
+   "예측·가정": -0.8,
+   "선거·관측": -0.8,
+   "나이지리아": -1.4,
+   "행사·홍보": -1.4,
+   "사건·공격": 0.3,
+   "대응·제재": 0.3,
+   "기술·AI": 0.5,
+   "정책·인선": 0.5,
+   "원자재·에너지": -0.8
   },
-  "window_days": 21,
-  "at": "2026-11-10 09:19 UTC"
+  "p0": 0.4,
+  "n_labels": 10,
+  "window_days": 120,
+  "at": "2026-11-10 09:24 UTC"
  }
 }

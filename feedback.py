@@ -32,7 +32,6 @@ FB_PATH = os.path.join(STATE_DIR, "feedback.jsonl")
 CH = "webpaperHQ"
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
-MIN_DISLIKES = 3         # 창 안에 👎 가 이보다 적으면 소스·비트 보정을 하지 않는다
 KEEP_DAYS = 120          # 21일 창으로 보고하므로 넉넉히 남긴다
 DISLIKE = "👎"
 LIKE = "👍"
@@ -194,6 +193,48 @@ def merge(posts):
     return old
 
 
+LABELS = os.path.join(STATE_DIR, "labels.json")
+
+
+def labels():
+    """'표본'으로 지정한 게시물 = 사람이 실제로 판정한 글(반응 없으면 중립)."""
+    if not os.path.exists(LABELS):
+        return {"ids": [], "batches": []}
+    try:
+        return json.load(open(LABELS, encoding="utf-8"))
+    except Exception:
+        return {"ids": [], "batches": []}
+
+
+def add_sample(m_from, m_to):
+    """표본 구간을 등록한다. 이 구간의 글은 반응이 없어도 '중립'으로 학습된다."""
+    lab = labels()
+    ids = sorted(set(lab.get("ids", [])) | set(range(int(m_from), int(m_to) + 1)))
+    lab["ids"] = ids
+    lab.setdefault("batches", []).append(
+        {"from": int(m_from), "to": int(m_to),
+         "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")})
+    os.makedirs(STATE_DIR, exist_ok=True)
+    json.dump(lab, open(LABELS, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    return len(ids)
+
+
+def labeled(days=60):
+    """표본으로 등록된 글만. 반응이 없으면 중립(0)으로 본다."""
+    ids = set(labels().get("ids", []))
+    cut = time.time() - days * 86400
+    out = []
+    for d in load_fb():
+        if d["m"] not in ids:
+            continue
+        if _ts(d.get("d") or d.get("a")) < cut:
+            continue
+        rx = d.get("rx") or {}
+        d["lab"] = 1 if rx.get(DISLIKE) else (-1 if rx.get(LIKE) else 0)
+        out.append(d)
+    return out
+
+
 def load_fb():
     out = []
     if not os.path.exists(FB_PATH):
@@ -285,75 +326,6 @@ def report(days):
 
 
 # ── 보정값 ────────────────────────────────────────────────────────────
-def compute(days=21):
-    """소스별 점수 보정 — 표본 수로 가중한 👎율 (2026-11-10 개정).
-
-    왜 개수가 아니라 '율'인가: 소스마다 게시량이 1건과 60건으로 다르다. 👎 1건짜리
-    소스를 60건짜리 소스와 같게 벌하면, 표본 4건짜리 주에도 세 소스가 한꺼번에
-    움직인다(2026-11-10 첫 표본에서 실제로 그럴 뻔했다).
-
-        rd = (👎 + 0.5) / (게시 + 3)      ← 스무딩. 게시 1건·👎 1건 = 0.375
-        rl = (👍 + 0.5) / (게시 + 3)
-        adj = -10·(rd - base_d) + 6·(rl - base_l)   (범위 -4 ~ +2)
-
-    base 는 창 전체의 👎/👍 비율. 비트 보정은 없앴다 — 4건짜리 표본에서 👎 2건이
-    같은 비트에 몰리면 그 비트가 통째로 밀리는데, 그건 기사 단위 신호를 주제로
-    오독한 것이다. 주제 취향은 signals 표로 보고 사람이 판단한다.
-    """
-    fb = window(days)
-    stat = {}
-    dis_total = lik_total = 0
-    for d in fb:
-        n = stat.setdefault(d.get("f") or "?", [0, 0, 0])
-        n[0] += 1
-        rx = d.get("rx") or {}
-        n[1] += rx.get(DISLIKE, 0)
-        n[2] += rx.get(LIKE, 0)
-        dis_total += rx.get(DISLIKE, 0)
-        lik_total += rx.get(LIKE, 0)
-    if not fb:
-        return {}, {}, 0, 0, {}
-    base_d = dis_total / len(fb)
-    base_l = lik_total / len(fb)
-    out, detail = {}, {}
-    for f, (n, dis, lik) in stat.items():
-        if not (dis or lik):
-            continue
-        rd = (dis + 0.5) / (n + 3)
-        rl = (lik + 0.5) / (n + 3)
-        v = -10.0 * (rd - base_d) + 6.0 * (rl - base_l)
-        v = round(max(-4.0, min(2.0, v)), 1)
-        detail[f] = (n, dis, lik, round(rd, 3), round(rl, 3), v)
-        if abs(v) >= 0.3:
-            out[f] = v
-    return out, {}, len(fb), dis_total, detail
-
-
-def apply(days=21, dry=False, force=False):
-    cfgp = os.path.join(BASE, "config.json")
-    cfg = json.load(open(cfgp, encoding="utf-8"))
-    src, beat, n, n_dis, detail = compute(days)
-    if n_dis < MIN_DISLIKES and not force:
-        print(f"👎 {n_dis}건 — 보정 건너뜀(최소 {MIN_DISLIKES}건 필요). 표본 부족을 그대로 보고한다.")
-        return
-    prev = cfg.get("feedback") or {}
-    print(f"게시 {n}건 · 👎 {n_dis}건 기준")
-    if detail:
-        print(f"  {'소스':<24} {'게시':>4} {'👎':>3} {'👍':>3} {'👎율':>6}  보정")
-        for f, (cnt, dis, lik, rd, rl, v) in sorted(detail.items(), key=lambda x: -x[1][1]):
-            print(f"  {f:<24} {cnt:>4} {dis:>3} {lik:>3} {rd*100:>5.1f}%  {v:+.1f}")
-    for k in sorted(set(src) | set(prev.get("src", {}))):
-        o, v = prev.get("src", {}).get(k, 0), src.get(k, 0)
-        if o != v:
-            print(f"  변경 {k}: {o:+.1f} → {v:+.1f}")
-    if dry or src == prev.get("src", {}):
-        return
-    cfg["feedback"] = {"src": src, "window_days": days,
-                       "at": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}
-    json.dump(cfg, open(cfgp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    print("config.json 갱신")
-
-
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -361,10 +333,9 @@ def main():
     f.add_argument("--days", type=int, default=21)
     r = sub.add_parser("report")
     r.add_argument("--days", type=int, default=21)
-    a = sub.add_parser("apply")
-    a.add_argument("--days", type=int, default=21)
-    a.add_argument("--dry-run", action="store_true")
-    a.add_argument("--force", action="store_true")
+    sp = sub.add_parser("sample")
+    sp.add_argument("--from", dest="mf", type=int, required=True)
+    sp.add_argument("--to", dest="mt", type=int, required=True)
     args = ap.parse_args()
 
     if args.cmd == "fetch":
@@ -382,10 +353,12 @@ def main():
               f"| feedback.jsonl {len(allfb)}줄")
         for p in sorted(got, key=lambda x: -x["m"])[:20]:
             print(f"  {p['m']} {p['rx']} {p.get('t','(미연결)')[:60]}")
+    elif args.cmd == "sample":
+        print(f"표본 등록: {args.mf}~{args.mt} → 누적 {add_sample(args.mf, args.mt)}건")
     elif args.cmd == "report":
         report(args.days)
     else:
-        apply(args.days, args.dry_run, args.force)
+        print("소스 보정은 폐기됐다(2026-11-10). 취향은 taste.py learn 이 담당한다.")
 
 
 if __name__ == "__main__":
