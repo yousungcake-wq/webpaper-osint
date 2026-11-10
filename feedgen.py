@@ -5,8 +5,10 @@
   · state/posts/*.jsonl 은 한 줄 = 게시 1건이지만 사이트가 그대로 읽기엔 너무 원시적이다
     (요약 없음·키 이름 한 글자·시각 형식 제각각).
   · 사이트는 정적 호스팅(무료)에서 돌기 때문에 서버가 없다. 데이터도 파일이어야 한다.
-  · 페이지를 다시 배포하지 않고 **데이터만** 갱신하려고 feed.json 을 site/ 밖(data/)에 둔다.
-    5분마다 배포하면 GitHub Pages 빌드 한도(시간당 10회)에 걸린다.
+  · feed.json 은 site/ 안에 두고 **페이지와 같이 배포한다**(2026-11-10 변경).
+    GitHub 문서: "10 builds per hour ... This limit does not apply if you build and publish
+    your site with a custom GitHub Actions workflow." → Actions 배포는 빌드 한도가 없다.
+    게시 → 커밋 → 배포(15~30초)가 한 흐름이라 사이트가 1분 안에 갱신된다.
 
 계약(사이트가 읽는 스키마)
   { "generated_at": ISO, "count": N,
@@ -23,7 +25,7 @@ import datetime as dt
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 POSTS = os.path.join(BASE, "state", "posts")
-OUT = os.path.join(BASE, "data", "feed.json")
+OUT = os.path.join(BASE, "site", "feed.json")
 DAYS = 5          # 사이트에 남길 기간
 MAX_ITEMS = 300   # 한 번에 내려줄 최대 건수 (모바일 파싱·전송 부담)
 BEATS = ("TECH", "FINANCE", "CONFLICT", "ECONOMY", "COMMODITY", "POLITICS")
