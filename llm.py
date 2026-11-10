@@ -174,8 +174,46 @@ def call_mistral(key, prompt, model="mistral-small-latest"):
     return r["choices"][0]["message"]["content"]
 
 
+# ── NVIDIA NIM (2026-11-10 실측) ──────────────────────────────────────────
+# OpenAI 호환이지만 함정이 두 개 있었다.
+#  ① 모델 목록(/v1/models)에 있어도 계정에 프로비저닝이 안 된 모델은 404 다.
+#  ② reasoning 계열은 max_tokens 를 전부 '생각'에 쓰고 content 가 빈 문자열로 돌아온다.
+#     → chat_template_kwargs.enable_thinking=false 또는 reasoning_effort=low 로 끈다.
+# 실측(요약 1건): glm-5.3-flash 3.4초·157자·해요체 정상 / nemotron-3-nano 1.3초(평서체, korean_smooth 로 보정)
+NVIDIA_MODELS = [
+    "z-ai/glm-5.3-flash",                          # 7초·한국어 품질 최고(영어 누출 없음)
+    "nvidia/nemotron-3.5-lightning-30b-a3b",       # 1.4초·준수
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",  # 1.7초·빠르지만 영어 단어가 섞임
+]
+NVIDIA_EXTRA = {
+    "z-ai/glm-5.3-flash": {"reasoning_effort": "low"},
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {"chat_template_kwargs": {"enable_thinking": False}},
+    "nvidia/nemotron-3.5-lightning-30b-a3b": {"chat_template_kwargs": {"enable_thinking": False}},
+}
+
+def call_nvidia(key, prompt, model=None):
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    last = None
+    for m in ([model] if model else NVIDIA_MODELS):
+        body = {"model": m, "temperature": 0.4, "max_tokens": 900,
+                "messages": [{"role": "user", "content": prompt}]}
+        body.update(NVIDIA_EXTRA.get(m, {}))
+        try:
+            r = _post(url, body, {"Authorization": f"Bearer {key}"}, timeout=60)
+            out = (r["choices"][0]["message"].get("content") or "").strip()
+            if out:
+                return out
+            last = RuntimeError(f"{m}: 빈 응답(추론 토큰 소진)")
+        except Exception as e:
+            last = e
+            if "401" in str(e) or "403" in str(e):
+                raise
+            continue
+    raise last or RuntimeError("nvidia: no model")
+
 PROVIDERS = [
     ("GEMINI_API_KEY", call_gemini),
+    ("NVIDIA_API_KEY", call_nvidia),
     ("CEREBRAS_API_KEY", call_cerebras),
     ("MISTRAL_API_KEY", call_mistral),
     ("GROQ_API_KEY", call_groq),
