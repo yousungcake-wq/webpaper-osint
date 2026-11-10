@@ -8,5 +8,13 @@
  "post_every_s": 300,
  "max_posts_per_hour": 10,
  "quiet_empty": true,
- "mode": "llm"
+ "mode": "llm",
+ "feedback": {
+  "src": {
+   "FormatBiz": -2.5
+  },
+  "beat": {},
+  "window_days": 21,
+  "at": "2026-11-10 08:37 UTC"
+ }
 }

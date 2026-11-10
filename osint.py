@@ -218,6 +218,33 @@ NOISE = ["celebrity", "football", "soccer", "cricket", "horoscope", "recipe",
          "fashion week", "reality show", "award show"]
 
 
+_FB_CACHE = {}
+
+
+def fb_adj(feed="", beat=""):
+    """주간 점검 반응(👎/👍)에서 나온 점수 보정. feedback.py apply 가 config.json 에 쓴다.
+
+    표본이 작아 소스 -4~+2, 비트 -3~+1 로 묶여 있고, 창(기본 21일)을 벗어난
+    반응은 사라지므로 보정도 같이 옛 상태로 돌아간다. 읽기 실패는 0으로 처리한다.
+    """
+    try:
+        mt = os.path.getmtime(os.path.join(NEWSDIR, "config.json"))
+    except OSError:
+        mt = 0
+    fb = _FB_CACHE.get("v") if _FB_CACHE.get("mt") == mt else None
+    if fb is None:
+        _FB_CACHE["mt"] = mt
+        try:
+            fb = conf().get("feedback") or {}
+        except Exception:
+            fb = {}
+        _FB_CACHE["v"] = fb
+    if not fb:
+        return 0.0
+    return (fb.get("src", {}).get(feed, 0.0) or 0.0) + \
+           (fb.get("beat", {}).get(beat, 0.0) or 0.0)
+
+
 def score_item(it, cat, now):
     """관심사(국제정치·테크·금융·경제) 중심 채점."""
     txt = (it["title"] + " " + it.get("desc", "")).lower()
@@ -543,7 +570,7 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     if ts and ts < cutoff_s:
         con.execute("UPDATE items SET posted=1, note='expired' WHERE id=?", (_id,))
         return None
-    if sc < min_score:
+    if sc + fb_adj(feed, r[8] if len(r) > 8 else "") < min_score:
         return None
     # 라운드업·오피니언·종목추천은 내용이 섞여서 요약이 사고를 낸다.
     # (2026-11-09: 금리 기사 요약에 F1 브라질 우승이 붙었다 — Rio Times Big Read)
@@ -598,10 +625,11 @@ def pick(con, cfg):
     for b in _b.BEATS:
         cand = [r for r in con.execute(sql, (b, "", cat_hint.get(b, "-"))).fetchall()
                 if r[4] not in bad]
-        cand.sort(key=lambda r: -(r[7] * (0.55 + 0.45 * health.get(r[4], 0.8))))
+        cand.sort(key=lambda r: -((r[7] + fb_adj(r[4])) *
+                                  (0.55 + 0.45 * health.get(r[4], 0.8))))
         for r in cand[:15]:
             reg = (r[9] if len(r) > 9 and r[9] else _b.kw_region(r[1]))   # LLM 지역 라벨 우선
-            pool.append((_b.z_score(r[7], b, stats), b, r, reg))
+            pool.append((_b.z_score(r[7] + fb_adj(r[4]), b, stats), b, r, reg))
     pool.sort(key=lambda x: -x[0])
 
     recent_c = _b.beat_counts(con, window=5)
@@ -733,7 +761,11 @@ def compose(row, con, cfg):
             f"<blockquote expandable><b>출처</b>\n{links}</blockquote>")
 
 
+LAST_MSG_ID = 0          # 마지막으로 성공한 sendMessage 의 message_id (feedback 매칭용)
+
+
 def send(text, chat=None, html=True):
+    global LAST_MSG_ID
     cfg = conf()
     chat = chat or cfg["channel"]
     token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -752,8 +784,11 @@ def send(text, chat=None, html=True):
                                  data=data, headers={"User-Agent": "Leyley/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            res = json.loads(r.read().decode())
-        return bool(res.get("ok")), res.get("description", "")
+            body = json.loads(r.read().decode())
+        result = body.get("result") or {}
+        if isinstance(result, dict) and result.get("message_id"):
+            LAST_MSG_ID = int(result["message_id"])
+        return bool(body.get("ok")), body.get("description", "")
     except Exception as e:
         return False, str(e)[:120]
 

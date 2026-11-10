@@ -142,6 +142,7 @@ def append_state(d, con, row_id):
            "f": (d.get("feed") or "")[:40], "c": r[3] or d.get("cat", ""),
            "b": beat, "r": region, "s": d.get("score", 0),
            "x": (r[4] or "")[:1200],
+           "m": getattr(osint, "LAST_MSG_ID", 0),      # 반응(👎/👍) 매칭용
            "a": now.strftime("%Y-%m-%d %H:%M UTC")}
     sub = os.path.join(POSTS_DIR, now.strftime("%Y-%m-%d"))
     os.makedirs(sub, exist_ok=True)
