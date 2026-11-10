@@ -32,6 +32,7 @@ FB_PATH = os.path.join(STATE_DIR, "feedback.jsonl")
 CH = "webpaperHQ"
 UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
+KEEP_DAYS = 120          # 21일 창으로 보고하므로 넉넉히 남긴다
 DISLIKE = "👎"
 LIKE = "👍"
 
@@ -175,6 +176,8 @@ def merge(posts):
         if rec["rx"]:
             rec["seen"] = now
         old[m] = rec
+    cut = time.time() - KEEP_DAYS * 86400          # 오래된 반응은 버린다(파일이 무한히 자라지 않게)
+    old = {m: d for m, d in old.items() if _ts(d.get("d") or d.get("a")) >= cut}
     os.makedirs(STATE_DIR, exist_ok=True)
     with open(FB_PATH, "w", encoding="utf-8") as f:
         for m in sorted(old):
