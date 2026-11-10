@@ -186,6 +186,8 @@ python3 feedback.py apply --days 21    # 소스/비트 보정 → config.json fe
 보정도 함께 되돌아간다. `osint.fb_adj()` 가 `pick` 정렬과 `_candidate_ok`
 게이트 양쪽에 적용한다(게이트에만 걸면 1등 자리를 계속 차지한다).
 
+**첫 적용 사례 (#737)** — FormatBiz 의 행사 보도자료(Content Americas 2027). 게시 링크가 `…/dettNews.aspx?id` 로 잘려 있었다 → `junk_item` 에 '쿼리 값이 비어 끝나는 링크' 규칙 추가 + `tests/test_feedback_rules.py` 회귀 테스트. 같은 소스 점수는 −2.5.
+
 **한계** — 반응은 사후 신호다. 👎 가 없으면 아무것도 배우지 못하므로,
 👎 3건 미만인 주는 `apply` 를 건너뛰고 '반응 부족'으로 보고한다.
 

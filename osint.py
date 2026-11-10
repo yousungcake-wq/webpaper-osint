@@ -418,6 +418,9 @@ def junk_item(title, url):
         return True
     if any(d in (url or "") for d in JUNK_DOMAIN):
         return True
+    # 잘린 링크: 쿼리가 "?id" 처럼 값 없이 끝난다 (2026-11-10 👎 #737 FormatBiz)
+    if re.search(r"\?[A-Za-z_]{1,6}$", url or "") or re.search(r"[?&][A-Za-z_]{1,20}=$", url or ""):
+        return True
     return False
 
 
