@@ -119,7 +119,7 @@ def load_state(con):
                VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)""",
             (d.get("k", ""), d.get("t", ""), "", d.get("u", ""), d.get("f", ""), d.get("c", ""),
              "", d.get("a", ""), d.get("s", 0), d.get("a", ""), d.get("n"),
-             d.get("b", ""), "state", d.get("r", ""),
+             beats.norm_beat(d.get("b", "")), "state", d.get("r", ""),
              d.get("cu") or filters.canon_url(d.get("u", "")), d.get("x", "")))
     con.commit()
     return len(keep)

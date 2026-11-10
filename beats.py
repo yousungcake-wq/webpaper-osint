@@ -5,7 +5,9 @@
 해법: ① 제목을 6개 비트로 분류(LLM 배치 + 키워드 폴백) ② 최근 게시물의 비트 분포를 보고
      목표 비율에서 가장 모자란 비트를 먼저 채운다.
 
-비트: TECH / FINANCE / CONFLICT / COMMODITY / ECONOMY / POLITICS (+OTHER: 게시 제외)
+비트: TECH / ECONOMY / CONFLICT / POLITICS (+OTHER: 게시 제외)
+      2026-11-10 사용자 요청: 금융(FINANCE)·원자재(COMMODITY)·경제(ECONOMY)를 ECONOMY 로 합쳤다.
+      화면 칩은 전체/테크/경제/분쟁/정치/기타. 예전 라벨은 norm_beat() 로 흡수한다.
 """
 import json
 import os
@@ -13,9 +15,16 @@ import re
 import time
 import urllib.request
 
-BEATS = ["TECH", "FINANCE", "CONFLICT", "COMMODITY", "ECONOMY", "POLITICS"]
-TARGET = {"TECH": 2, "FINANCE": 2, "CONFLICT": 2, "ECONOMY": 2,
-          "COMMODITY": 1, "POLITICS": 1}          # 10건 기준 목표 비율
+BEATS = ["TECH", "ECONOMY", "CONFLICT", "POLITICS"]
+TARGET = {"TECH": 2, "ECONOMY": 4, "CONFLICT": 2, "POLITICS": 2}   # 10건 기준 목표 비율
+
+# 소스 카테고리·예전 상태값을 새 비트로 흡수한다.
+LEGACY = {"FINANCE": "ECONOMY", "COMMODITY": "ECONOMY", "MARKETS": "ECONOMY"}
+
+def norm_beat(b):
+    b = (b or "").strip().upper()
+    b = LEGACY.get(b, b)
+    return b if b in BEATS or b == "OTHER" else "OTHER"
 WINDOW = 10                                       # 분포를 볼 최근 게시물 수
 
 UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
@@ -58,13 +67,16 @@ KW = {
               "macklemore", "wedding", "chef", "restaurant review"],
 }
 
+# 금융·원자재 키워드는 경제로 흡수 (2026-11-10 병합)
+KW["ECONOMY"] = KW["ECONOMY"] + KW.pop("FINANCE") + KW.pop("COMMODITY")
+
 # 키워드 오분류 방지 (먼저 적용)
 OVERRIDES = [
     (r"west bank", "CONFLICT"), (r"\bgaza\b", "CONFLICT"), (r"\bgolan\b", "CONFLICT"),
     (r"\bcentral bank\b", "ECONOMY"), (r"\bbank of (japan|england|korea)\b", "ECONOMY"),
     (r"\bworld bank\b", "ECONOMY"), (r"\bcentral banking\b", "ECONOMY"),
     (r"\bai\b.{0,12}\bchip", "TECH"), (r"data cent(er|re)", "TECH"),
-    (r"\bopec\b", "COMMODITY"), (r"\bcrude oil\b", "COMMODITY"),
+    (r"\bopec\b", "ECONOMY"), (r"\bcrude oil\b", "ECONOMY"),
     (r"\bpresident trump\b.{0,30}tariff", "ECONOMY"),
 ]
 
@@ -120,8 +132,9 @@ def region_deficits(con, window=12):
                   key=lambda x: -x[1])
 
 
-CAT_HINT = {"tech": "TECH", "finance": "FINANCE", "conflict": "CONFLICT",
-            "economy": "ECONOMY", "politics": "POLITICS"}
+CAT_HINT = {"tech": "TECH", "finance": "ECONOMY", "conflict": "CONFLICT",
+            "economy": "ECONOMY", "commodity": "ECONOMY", "business": "ECONOMY",
+            "politics": "POLITICS"}
 
 
 _PAT = {}
@@ -164,7 +177,8 @@ def kw_beat(title, cat=""):
 
 # ── LLM 배치 분류 ────────────────────────────────────────────────
 PROMPT = """다음 뉴스 제목을 비트와 지역으로 분류해라. 설명 없이 "번호:비트:지역" 형식으로만 한 줄씩 답한다.
-비트: TECH(기술·AI·반도체·플랫폼), FINANCE(금융·시장·금리·실적·M&A), CONFLICT(전쟁·분쟁·안보·테러), COMMODITY(원자재·에너지·광물·곡물), ECONOMY(거시경제·무역·고용·물가), POLITICS(국제정치·선거·외교), OTHER(연예·스포츠·생활)
+비트: TECH(기술·AI·반도체·플랫폼), ECONOMY(경제 전체 — 금융·시장·금리·실적·M&A·원자재·에너지·광물·곡물·무역·고용·물가), CONFLICT(전쟁·분쟁·안보·테러), POLITICS(국제정치·선거·외교), OTHER(연예·스포츠·생활 등 위 넷에 안 들어가는 것)
+경제와 기술 중 애매하면 그 기사의 **주된 축**으로 고른다(예: 반도체 실적 전망 → TECH, 유가·금리·물가 → ECONOMY).
 지역: EUROPE(유럽·러시아 서부), LATAM(중남미·카리브), US(미국·캐나다), ASIA(동아시아·남아시아·동남아·중앙아·오세아니아), AFRICA(사하라 이남 아프리카), MIDDLE_EAST(중동·북아프리카·이란·이스라엘), GLOBAL(여러 지역에 걸친 사안이거나 본문의 주체가 특정 국가가 아님)
 사건이 일어난 곳이 아니라 **기사의 주체** 기준으로 고른다.
 
@@ -214,6 +228,10 @@ def _llm_labels(titles):
 
 
 _BIT_RE = re.compile(r"(TECH|FINANCE|CONFLICT|COMMODITY|ECONOMY|POLITICS|OTHER)", re.I)
+
+def _bit(s):
+    """LLM 이 옛 라벨(FINANCE/COMMODITY)을 뱉어도 ECONOMY 로 흡수한다."""
+    return norm_beat(s)
 LLM_REGIONS = ("EUROPE", "LATAM", "US", "ASIA", "AFRICA", "MIDDLE_EAST", "GLOBAL")
 
 
@@ -240,7 +258,7 @@ def _parse(text, n):
             if re.search(r"\b" + r + r"\b", rest, re.I):
                 region = r
                 break
-        labels[i] = (bm.group(1).upper(), region)
+        labels[i] = (_bit(bm.group(1)), region)
     if sum(1 for x in labels if x) < n * 0.6:
         return None
     return labels

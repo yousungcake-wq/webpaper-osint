@@ -13,7 +13,7 @@
 계약(사이트가 읽는 스키마)
   { "generated_at": ISO, "count": N,
     "items": [ {"h":한국어제목|"", "t":원문제목, "summary":요약|"", "url":URL|"",
-                "src":["매체"], "b":비트, "r":지역, "ts":ISO} ] }
+                "src":["매체"], "b":"TECH|ECONOMY|CONFLICT|POLITICS|OTHER", "r":지역, "ts":ISO} ] }
   점수(s)와 원시 시각(a)은 싣지 않는다 — 화면에 쓰지 않는 값까지 5분마다 커밋하면
   저장소만 무거워진다.
 
@@ -28,7 +28,9 @@ POSTS = os.path.join(BASE, "state", "posts")
 OUT = os.path.join(BASE, "site", "feed.json")
 DAYS = 5          # 사이트에 남길 기간
 MAX_ITEMS = 300   # 한 번에 내려줄 최대 건수 (모바일 파싱·전송 부담)
-BEATS = ("TECH", "FINANCE", "CONFLICT", "ECONOMY", "COMMODITY", "POLITICS")
+# 2026-11-10 비트 통합: 금융·원자재 → 경제, 나머지는 기타(OTHER)
+BEATS = ("TECH", "ECONOMY", "CONFLICT", "POLITICS", "OTHER")
+LEGACY_BEAT = {"FINANCE": "ECONOMY", "COMMODITY": "ECONOMY", "MARKETS": "ECONOMY"}
 REGIONS = ("US", "LATAM", "EUROPE", "ASIA", "MIDDLE_EAST", "AFRICA", "GLOBAL")
 
 
@@ -71,9 +73,10 @@ def build(days=DAYS, max_items=MAX_ITEMS):
             continue
         seen_key.add(k)
         seen_url.add(cu)
-        beat = (r.get("b") or "").upper()
+        beat = (r.get("b") or "").strip().upper()
+        beat = LEGACY_BEAT.get(beat, beat)
         if beat not in BEATS:
-            beat = ""
+            beat = "OTHER"          # 분류가 없던 옛 글도 '기타'로는 볼 수 있게
         region = (r.get("r") or "").upper()
         if region not in REGIONS:
             region = "GLOBAL"

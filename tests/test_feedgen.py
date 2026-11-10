@@ -36,7 +36,8 @@ def main():
     write(tmp, today, "010201-b.jsonl", [
         row(k="a", cu="x/1", t="dup key"),            # 같은 키 → 버림
         row(k="b", cu="x/1", u="https://x/1?utm=1"),  # 같은 정규화 URL → 버림
-        row(k="c", cu="x/3", b="weird", r="MARS"),    # 이상한 비트/지역 → 정규화
+        row(k="c", cu="x/3", b="weird", r="MARS"),    # 이상한 비트/지역 → OTHER/GLOBAL
+        row(k="e", cu="x/5", b="FINANCE"),            # 옛 비트 → ECONOMY
         row(k="d", cu="x/4", x="", h=""),             # 요약/제목 없음 → 그대로
     ])
     write(tmp, old, "010101-old.jsonl", [row(k="old", cu="x/9")])   # 기간 밖 → 버림
@@ -45,14 +46,14 @@ def main():
     items = data["items"]
     keys = [i["t"] for i in items]
 
-    assert len(items) == 4, f"기대 4건, 실제 {len(items)}: {keys}"
+    assert len(items) == 5, f"기대 5건, 실제 {len(items)}: {keys}"
     assert "dup key" not in keys, "같은 키가 들어왔다"
     assert all(i["url"] != "https://x/1?utm=1" for i in items), "정규화 URL 중복이 들어왔다"
     assert all(i["t"] != "English title" or True for i in items)
 
-    weird = [i for i in items if i["t"] == "English title" and i["b"] == ""]
-    assert weird, "알 수 없는 비트가 빈 문자열로 정규화되지 않았다"
-    assert weird[0]["r"] == "GLOBAL", "알 수 없는 지역이 GLOBAL 로 정규화되지 않았다"
+    weird = [i for i in items if i["t"] == "English title" and i["r"] == "GLOBAL"]
+    assert weird and weird[0]["b"] == "OTHER", "알 수 없는 비트가 OTHER 로 정규화되지 않았다"
+    assert any(i["b"] == "ECONOMY" for i in items), "옛 FINANCE 가 ECONOMY 로 합쳐지지 않았다"
 
     assert all("a" not in i for i in items), "정렬용 a 가 출력에 남았다"
     assert all(i["ts"].endswith("Z") for i in items), "ts 가 ISO 가 아니다"
@@ -71,7 +72,7 @@ def main():
     data3, _ = feedgen.build()
     assert data3["count"] == 0 and data3["items"] == []
 
-    print("feedgen: 8 checks ok")
+    print("feedgen: 9 checks ok")
 
 if __name__ == "__main__":
     main()

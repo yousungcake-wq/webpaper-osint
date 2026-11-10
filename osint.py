@@ -598,8 +598,8 @@ def pick(con, cfg):
     sql = """SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
         WHERE posted=0 AND (beat=? OR (COALESCE(beat,'')=? AND cat=?))
         ORDER BY score DESC LIMIT 30"""
-    cat_hint = {"TECH": "tech", "FINANCE": "finance", "CONFLICT": "conflict",
-                "ECONOMY": "economy", "POLITICS": "politics"}
+    cat_hint = {"TECH": "tech", "ECONOMY": "economy", "CONFLICT": "conflict",
+                "POLITICS": "politics"}
 
     bad = bad_feeds(con)
     health = feed_health(con)
