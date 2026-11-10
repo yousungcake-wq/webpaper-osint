@@ -43,6 +43,12 @@ def conf():
             c.update(json.load(open(CONF, encoding="utf-8")))
         except Exception:
             pass
+    # 레포는 public 이라 개인 채팅 ID 를 config.json 에 두지 않는다. Actions 에서는
+    # TG_OWNER_CHAT 시크릿으로 주입한다. 이게 없으면 알림이 공개 채널로 새므로,
+    # 비어 있을 때 notify 는 채널로 보내지 않고 조용히 실패한다(2026-11-10).
+    env_chat = os.environ.get("TG_OWNER_CHAT", "").strip()
+    if env_chat:
+        c["owner_chat"] = env_chat
     return c
 
 
@@ -1239,7 +1245,10 @@ def main():
             print(f'{p}\t{d["id"]}\t{d["score"]}\t{d["feed"]}\t{d["title"][:70]}')
     elif a.cmd == "notify":
         text = open(a.file, encoding="utf-8").read() if a.file else sys.stdin.read()
-        chat = a.chat or cfg.get("owner_chat") or cfg["channel"]
+        chat = a.chat or cfg.get("owner_chat")
+        if not chat:
+            print("owner_chat 없음 — 공개 채널로 새지 않도록 전송 취소")
+            sys.exit(2)
         ok, err = notify(text, chat)
         print(chat, "sent" if ok else f"failed: {err}")
     elif a.cmd == "send":
@@ -1249,7 +1258,10 @@ def main():
         t = audit(con)
         print(t)
         if a.send:
-            ok, err = send(t, cfg.get("owner_chat") or cfg["channel"])
+            if not cfg.get("owner_chat"):
+                print("owner_chat 없음 — 공개 채널로 새지 않도록 전송 취소")
+                sys.exit(2)
+            ok, err = send(t, cfg["owner_chat"])
             print("sent" if ok else f"fail {err}")
 
 
