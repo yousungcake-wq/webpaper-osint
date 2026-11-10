@@ -166,7 +166,21 @@ def summarize(title, text, dry=False, thin=False):
             if not key or _cooling(name):
                 continue
             try:
-                out = fn(key, prompt)
+                # 5xx 는 순간 장애다. 2026-11-10 실측: Gemini 가 회차마다 503 을 뱉어
+                # 한 시간 넘게 조용했다. 429(한도)는 재시도해도 같으니 즉시 포기하고
+                # 쿨다운으로 넘기지만, 5xx 는 3초 뒤 한 번만 더 시도한다(60초 예산 안).
+                out = ""
+                for _try in (1, 2):
+                    try:
+                        out = fn(key, prompt)
+                        break
+                    except Exception as e2:
+                        msg2 = str(e2)
+                        transient = any(c in msg2 for c in ("500", "502", "503", "504"))
+                        if _try == 1 and transient and time.time() - t_start < 50:
+                            time.sleep(3)
+                            continue
+                        raise
                 out = re.sub(r"\s+", " ", out).strip()
                 out = re.sub(r"^(요약[:：]?|다음은|위 기사는)\s*", "", out)
                 if len(out) > 320:                # 길면 문장 경계에서 자른다
