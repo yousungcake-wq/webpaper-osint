@@ -2,8 +2,13 @@ name: OSINT block (emergency)
 
 # 비상용. 외부 크론이 며칠 죽었을 때 손으로 한 번 눌러 5시간 30분을 채운다.
 #   gh workflow run osint-block.yml
-# 일반 워크플로(osint.yml)와 같은 concurrency 그룹이라, 크론이 살아 있으면
-# 5분 뒤 다음 회차가 이 블록을 취소한다. 즉 "크론이 죽었을 때만 의미가 있다."
+#   gh workflow run osint-block.yml -f minutes=30 -f dry_run=true   # 시험
+#
+# 동시성 실측(2026-11-10):
+#   같은 그룹의 **대기 중인** 회차끼리는 서로 취소되지만, **이미 실행 중인 잡은 선점되지 않는다.**
+#   블록이 도는 동안 크론 회차는 pending 으로 쌓였다가 5분마다 서로 취소되고, 블록이 끝나야 시작한다.
+#   → 블록은 중간에 죽지 않는다. 대신 도는 동안 일반 회차는 멈춘다(블록이 같은 주기로 게시하므로 결과는 동일).
+#   과거 주석의 "5분 뒤 다음 회차가 이 블록을 취소한다"는 **틀렸다**.
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +16,9 @@ on:
         description: "게시하지 않고 본문 미리보기만"
         type: boolean
         default: false
+      minutes:
+        description: "블록 길이(분). 기본 330. 시험할 땐 30 정도로"
+        default: "330"
 
 concurrency:
   group: osint-cycle
@@ -41,7 +49,9 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          LOOP_MINUTES: "330"        # 5분 간격 × 66회
+          # 입력을 그대로 넘긴다. run_once.py 가 숫자 아닌 값은 0으로, 상한은 340으로 클램프한다
+          # (여기서 fromJSON 으로 검증하면 잘못된 입력이 워크플로 자체를 죽여 비상구가 사라진다).
+          LOOP_MINUTES: ${{ inputs.minutes }}
           COMMIT_STATE: "1"
           DRY_RUN: ${{ inputs.dry_run && '1' || '' }}
         run: |
