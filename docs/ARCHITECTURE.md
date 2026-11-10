@@ -185,7 +185,8 @@ coup +3` 중첩으로 **33점 1위**를 차지한 사례가 있었다.
    실패 시 Gemini). `beat_src='llm'|'kw'` 로 출처 구분. 타임아웃 20초.
 3. `OTHER`(연예·스포츠·일반)는 게시 대상에서 제외.
 
-비트 6종: `TECH FINANCE CONFLICT COMMODITY ECONOMY POLITICS`.
+비트 5종: `TECH ECONOMY CONFLICT POLITICS (+OTHER=기타, 게시 제외)`.
+2026-11-10 통합: 금융·원자재를 ECONOMY 로 합쳤다(사용자 요청). 예전 라벨은 `beats.norm_beat()` 가 흡수한다.
 
 ### 4.4 선택 (`osint.pick` + `run_once.install_loose_pick`)
 
@@ -194,7 +195,7 @@ coup +3` 중첩으로 **33점 1위**를 차지한 사례가 있었다.
 1. **우선 레인** — 자기 비트 안에서 `z ≥ 4.0` 이면 쿼터 무시. 단 같은 비트가 최근 5건 중
    3건 이상이면 차단(폭주 방지).
 2. **균형 레인** — 목표비에서 모자란 비트부터. 단 `z ≥ 0.8`(자기 비트 평균 이상)만.
-   목표비: `TECH2 FINANCE2 CONFLICT2 ECONOMY2 COMMODITY1 POLITICS1` (최근 10건 기준),
+   목표비: `TECH2 ECONOMY4 CONFLICT2 POLITICS2` (최근 10건 기준),
    지역: `EUROPE3 LATAM2 US2 ASIA2 AFRICA2 MIDDLE_EAST1` (최근 12건 기준).
 
 **z점수**: `(score − 비트평균) / 비트표준편차`. 원점수는 비트마다 분포가 달라
