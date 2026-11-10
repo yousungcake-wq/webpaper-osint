@@ -26,6 +26,7 @@ ROUNDUP_TITLE = re.compile(
     r"(?i)("
     r"daily brief|the big read|morning brief|evening brief|midday brief|"
     r"what to know|things to know|as it happened|live blog|live updates?|"
+    r"\blive\s*[:\u2013-]|"                     # "Cop31 live: …" (2026-11-10 👎 #741)
     r"latest updates|markets? wrap|market wrap|closing bell|opening bell|"
     r"\broundup\b|\brecap\b|week in review|weekly wrap|top \d+ (stories|news|things)|"
     r"morning digest|news digest|newsletter|first thing|the brief\b"
@@ -34,7 +35,7 @@ ROUNDUP_TITLE = re.compile(
 # 라운드업으로 보이는 URL 조각
 ROUNDUP_URL = re.compile(
     r"(?i)/(daily-brief|the-big-read|live-blog|liveblog|live-updates?|roundup|"
-    r"morning-brief|markets-wrap|what-to-know)(/|-|$)")
+    r"morning-brief|markets-wrap|what-to-know|live)(/|-|$)")
 
 # 오피니언·사설
 OPINION_URL = re.compile(

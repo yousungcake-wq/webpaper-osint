@@ -274,6 +274,12 @@ def report(days):
         print(f"\n■ {label}별 (게시 / 👎 / 👍)")
         for k, v in rows[:12]:
             print(f"  {k:<28} {v[0]:>4}  👎{v[1]:>2}  👍{v[2]:>2}")
+    try:                                     # 어떤 신호가 👎/👍 를 가르는지 (누적)
+        import signals as sig
+        print("")
+        sig.signals(days, show=8)
+    except Exception as e:
+        print(f"(signals 생략: {type(e).__name__})")
     return len(dis)
 
 

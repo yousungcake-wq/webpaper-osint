@@ -392,7 +392,7 @@ JUNK_TITLE = re.compile(
     r"(?i)(\barchives?\b|home ?page|\bsubscribe\b|\blog ?in\b|sign in|"
     r"\bobituar|horoscope|weather forecast|lottery|\bstock quote|"
     r"stock market analysis|market analysis|\btradingview\b|"
-    r"\([A-Z]{1,5}:[A-Z]{2,3}\)|"                     # 티커 표기 (IPO:CA)
+    r"\([A-Z]{1,5}:[A-Z]{2,6}\)|"                     # 티커 표기 (IPO:CA, NVDA:NASDAQ)
     r"^https?://|^\.|\|\s*$)")
 JUNK_DOMAIN = ("tvoneusa", "energynow", "journalarta", "montel", "britannica",
                "azernews", "postandcourier", "notus", "timesofindia",
