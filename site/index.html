@@ -54,12 +54,12 @@ body.is-pinned .topbar{top:42px}
 .ticker.is-pinned{position:sticky;top:0;z-index:26}
 .ticker__bar{display:flex;align-items:center;gap:6px;max-width:var(--maxw);margin:0 auto;height:42px;
   padding:0 8px 0 14px}
-.ticker__dot{width:7px;height:7px;border-radius:50%;background:var(--t-conflict);flex:0 0 auto;
-  animation:blink 1.6s ease-in-out infinite}
+.ticker__dot{width:7px;height:7px;border-radius:2px;background:var(--t-conflict);flex:0 0 auto;
+  margin-right:2px;animation:blink 1.6s ease-in-out infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 .ticker__viewport{flex:1 1 auto;min-width:0;overflow:hidden;
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 10px,#000 calc(100% - 18px),transparent);
-  mask-image:linear-gradient(90deg,transparent,#000 10px,#000 calc(100% - 18px),transparent)}
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 16px,#000 calc(100% - 20px),transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 16px,#000 calc(100% - 20px),transparent)}
 .ticker__track{display:inline-flex;white-space:nowrap;
   animation:marquee var(--dur,40s) linear infinite;will-change:transform}
 .ticker__viewport:hover .ticker__track,
@@ -68,11 +68,11 @@ body.is-pinned .topbar{top:42px}
   color:var(--fg);cursor:pointer;white-space:nowrap;text-align:left}
 .ticker__item:hover{color:var(--accent)}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.ticker__btn{display:inline-flex;align-items:center;gap:7px;height:32px;padding:0 9px;border:0;
+.ticker__btn{display:inline-flex;align-items:center;justify-content:center;height:32px;width:34px;padding:0;border:0;
   border-radius:10px;background:transparent;color:var(--muted);cursor:pointer;flex:0 0 auto;
   transition:background .12s,color .12s,box-shadow .12s}
 .ticker__btn:hover{background:var(--chip);color:var(--fg)}
-.ticker__btn[aria-pressed="true"]{color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+/* 고정/해제는 아이콘만 바뀐다 — 색·배경은 그대로 (2026-11-10 지적) */
 .ticker__ico{display:grid;place-items:center}
 .hd{display:flex;align-items:center;justify-content:space-between;gap:12px;
   max-width:var(--maxw);margin:0 auto;padding:10px 20px;min-height:56px}
@@ -187,9 +187,9 @@ body.is-pinned .topbar{top:42px}
 <body>
 <div class="ticker" id="ticker" hidden>
   <div class="ticker__bar">
+    <span class="ticker__dot" aria-hidden="true"></span>
     <div class="ticker__viewport"><div class="ticker__track" id="tickerTrack"></div></div>
     <button class="ticker__btn" id="pinBtn" type="button" aria-label="속보 고정" aria-pressed="false">
-      <span class="ticker__dot" aria-hidden="true"></span>
       <span class="ticker__ico" aria-hidden="true">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
              stroke-linecap="round" stroke-linejoin="round">
