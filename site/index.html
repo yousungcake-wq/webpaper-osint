@@ -183,8 +183,10 @@ ul{padding:0;list-style:none}
 /* ── 데이터 ────────────────────────────────────────────────────────────
    feed.json 은 저장소 main 브랜치에 5분마다 커밋된다(파이프라인이 게시할 때마다).
    사이트(gh-pages)와 데이터(raw)를 분리한 이유: 사이트를 5분마다 다시 배포하면
-   GitHub Pages 빌드 한도(시간당 10회)에 걸린다. raw 는 max-age=300 이라
-   ?t= 쿼리로 캐시를 비껴간다. CORS 는 raw 가 허용한다(access-control-allow-origin: *). */
+   GitHub Pages 빌드 한도(시간당 10회)에 걸린다.
+   raw 는 Cache-Control: max-age=300 이고 **쿼리스트링을 캐시 키로 쓰지 않는다**
+   (?t= 를 붙여도 같은 캐시를 본다 — 2026-11-10 실측). 그래서 데이터는 최대 5분 낡는다.
+   CORS 는 raw 가 허용한다(access-control-allow-origin: *). */
 const FEED_URL = new URLSearchParams(location.search).get('feed')
   || 'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/data/feed.json';
 const POLL_MS = 60_000;
@@ -382,7 +384,7 @@ const io = new IntersectionObserver(es => {
 
 /* ── 불러오기 ────────────────────────────────────────────────────── */
 async function load(){
-  const r = await fetch(`${FEED_URL}?t=${Date.now()}`, {cache:'no-store'});
+  const r = await fetch(FEED_URL, {cache:'no-store'});
   if (!r.ok) throw new Error('HTTP ' + r.status);
   const d = await r.json();
   if (!Array.isArray(d.items)) throw new Error('bad payload');
