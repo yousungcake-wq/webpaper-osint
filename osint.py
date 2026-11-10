@@ -241,8 +241,9 @@ def fb_adj(feed="", beat=""):
         _FB_CACHE["v"] = fb
     if not fb:
         return 0.0
-    return (fb.get("src", {}).get(feed, 0.0) or 0.0) + \
-           (fb.get("beat", {}).get(beat, 0.0) or 0.0)
+    v = (fb.get("src", {}).get(feed, 0.0) or 0.0) + \
+        (fb.get("beat", {}).get(beat, 0.0) or 0.0)
+    return max(-5.0, min(2.5, v))        # 소스+비트가 겹쳐도 총합은 이 범위
 
 
 def score_item(it, cat, now):

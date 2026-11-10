@@ -119,6 +119,12 @@ def state_rows():
 def match(posts, rows):
     """게시물 ↔ 상태행. URL 정규화 일치를 먼저, 실패하면 시각(±150초) 최근접."""
     import filters
+    by_m = {r["m"]: r for r in rows if r.get("m")}
+    for p in posts.values():
+        row = by_m.get(p["m"])
+        if row is not None:
+            _fill(p, row)
+            p["how"] = "msgid"
     by_url = {}
     for r in rows:
         for u in (r.get("cu") or "", r.get("u") or ""):
@@ -126,6 +132,8 @@ def match(posts, rows):
                 by_url.setdefault(filters.canon_url(u), r)
     unmatched = []
     for p in posts.values():
+        if p.get("how") == "msgid":
+            continue
         row = by_url.get(filters.canon_url(p["url"] or "")) if p["url"] else None
         if row is None:
             unmatched.append(p)
@@ -344,8 +352,11 @@ def main():
         match(posts, rows)
         allfb = merge(posts)
         got = [p for p in posts.values() if p["rx"]]
-        nof = [p for p in posts.values() if p["rx"] and not p.get("f")]
-        print(f"긁음 {len(posts)}건 / 반응 {len(got)}건 / 상태 미연결 {len(nof)}건 "
+
+        how = {}
+        for p in posts.values():
+            how[p.get("how") or "미연결"] = how.get(p.get("how") or "미연결", 0) + 1
+        print(f"긁음 {len(posts)}건 / 반응 {len(got)}건 / 연결 {how} "
               f"| feedback.jsonl {len(allfb)}줄")
         for p in sorted(got, key=lambda x: -x["m"])[:20]:
             print(f"  {p['m']} {p['rx']} {p.get('t','(미연결)')[:60]}")
