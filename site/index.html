@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>WebPaper — 5분마다 새로 가져와요</title>
+<meta name="description" content="세계 주요 매체의 국제 뉴스를 5분마다 모아 한국어로 요약해 보여줍니다.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme:light)">
+<meta name="theme-color" content="#101114" media="(prefers-color-scheme:dark)">
+<meta property="og:title" content="WebPaper">
+<meta property="og:description" content="5분마다 갱신되는 국제 뉴스 브리핑">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23191a1c'/><rect x='7' y='9' width='18' height='3' rx='1.5' fill='%23fff'/><rect x='7' y='15' width='18' height='2.4' rx='1.2' fill='%23ffffffaa'/><rect x='7' y='20' width='11' height='2.4' rx='1.2' fill='%23ffffffaa'/></svg>">
+<style>
+:root{
+  --bg:#fff; --fg:#191919; --muted:#6b6b6b; --line:#ececec; --chip:#f2f4f6;
+  --accent:#3182f6; --warn:#f04452;
+  --t-tech:#3182f6; --t-finance:#12b76a; --t-conflict:#f04452;
+  --t-economy:#f79009; --t-commodity:#7a5af8; --t-politics:#475467;
+  --font-base:16px; --font-summary:15px; --font-caption:13px;
+  --lh:1.6; --tap:44px; --gap:14px; --radius:16px; --maxw:640px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#101114; --fg:#f2f3f5; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
+    --accent:#4f9bff;
+    --t-tech:#4f9bff; --t-finance:#32d583; --t-conflict:#ff6b7a;
+    --t-economy:#fdb022; --t-commodity:#9b8afb; --t-politics:#98a2b3;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-size:var(--font-base);line-height:var(--lh);
+  -webkit-text-size-adjust:100%;font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif}
+body{padding-bottom:96px}
+h1,h2,p,ul{margin:0}
+ul{padding:0;list-style:none}
+
+.topbar{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--bg) 92%,transparent);
+  backdrop-filter:saturate(180%) blur(12px);border-bottom:1px solid var(--line)}
+.hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;max-width:var(--maxw);margin:0 auto;padding:14px 20px 8px}
+.hd h1{font-size:20px;letter-spacing:-.02em}
+.hd h1 a{color:inherit;text-decoration:none}
+.hd__note{font-size:var(--font-caption);color:var(--muted);white-space:nowrap}
+.hd__note b{font-weight:600;color:var(--fg)}
+
+.filters{display:flex;gap:8px;overflow-x:auto;padding:2px 20px 10px;scrollbar-width:none;max-width:var(--maxw);margin:0 auto}
+.filters::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;min-height:36px;padding:0 14px;border:0;border-radius:18px;background:var(--chip);color:var(--muted);
+  font:inherit;font-size:var(--font-caption);cursor:pointer;transition:background .15s,color .15s;
+  -webkit-tap-highlight-color:transparent}
+.chip.is-on{background:var(--fg);color:var(--bg);font-weight:600}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+#feed{max-width:var(--maxw);margin:0 auto;padding:16px 20px;display:grid;gap:var(--gap)}
+@media (min-width:900px){
+  :root{--maxw:940px}
+  #feed{grid-template-columns:1fr 1fr;align-items:start}
+  #feed .more{grid-column:1 / -1}
+}
+
+.card{display:block;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);
+  cursor:pointer;transition:background .12s,border-color .12s;-webkit-tap-highlight-color:transparent}
+.card:hover{border-color:color-mix(in srgb,var(--fg) 18%,var(--line))}
+.card:active{background:var(--chip)}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.card__meta{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.card__src{font-size:var(--font-caption);color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;max-width:45%}
+.card__time{font-size:var(--font-caption);color:var(--muted);margin-left:auto;white-space:nowrap}
+.card__title{font-size:var(--font-base);font-weight:700;line-height:1.45;margin-bottom:6px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* 한국어 제목이 없어 원문제목을 그대로 쓰는 경우엔 조금 작게 */
+.card__title[lang="en"]{font-size:15px;font-weight:650;letter-spacing:-.01em}
+.card__summary{font-size:var(--font-summary);color:var(--muted);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card__summary:empty{display:none}
+
+.beat{font-size:11px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:6px;
+  color:var(--c,var(--muted));background:color-mix(in srgb,var(--c,var(--muted)) 14%,transparent);flex:0 0 auto}
+.beat[data-beat="TECH"]{--c:var(--t-tech)}
+.beat[data-beat="FINANCE"]{--c:var(--t-finance)}
+.beat[data-beat="CONFLICT"]{--c:var(--t-conflict)}
+.beat[data-beat="ECONOMY"]{--c:var(--t-economy)}
+.beat[data-beat="COMMODITY"]{--c:var(--t-commodity)}
+.beat[data-beat="POLITICS"]{--c:var(--t-politics)}
+.beat:empty{display:none}
+
+.empty{padding:56px 0;text-align:center;color:var(--muted);font-size:var(--font-summary);grid-column:1/-1}
+.empty button{margin-top:14px;min-height:40px;padding:0 18px;border:1px solid var(--line);border-radius:20px;
+  background:var(--chip);color:var(--fg);font:inherit;font-size:var(--font-caption);cursor:pointer}
+.more{display:grid;place-items:center;padding:6px 0 20px}
+.more button{min-height:44px;padding:0 22px;border:1px solid var(--line);border-radius:22px;background:var(--bg);
+  color:var(--muted);font:inherit;font-size:var(--font-caption);cursor:pointer}
+.more button[hidden]{display:none}
+
+.badge{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:30;min-height:var(--tap);
+  padding:0 20px;border:0;border-radius:22px;background:var(--accent);color:#fff;font:inherit;
+  font-size:var(--font-summary);font-weight:600;cursor:pointer;box-shadow:0 6px 24px rgba(49,130,246,.35)}
+.badge[hidden]{display:none}
+
+.sheet{position:fixed;inset:auto 0 0 0;margin:0 auto;width:100%;max-width:var(--maxw);border:0;padding:0;
+  border-radius:20px 20px 0 0;background:var(--bg);color:var(--fg);max-height:86dvh;
+  box-shadow:0 -8px 32px rgba(0,0,0,.2);transform:translateY(100%);
+  transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+.sheet.is-open{transform:translateY(0)}
+.sheet::backdrop{background:rgba(0,0,0,.42)}
+.sheet__inner{padding:8px 20px calc(24px + env(safe-area-inset-bottom));max-height:86dvh;
+  overflow-y:auto;overscroll-behavior:contain}
+.sheet__grip{width:36px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
+.sheet__meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.sheet__when{font-size:var(--font-caption);color:var(--muted)}
+.sheet__title{font-size:20px;font-weight:750;line-height:1.4;margin-bottom:4px;letter-spacing:-.01em}
+.sheet__orig{font-size:var(--font-caption);color:var(--muted);margin-bottom:14px;padding-bottom:14px;
+  border-bottom:1px solid var(--line)}
+.sheet__orig:empty{display:none}
+.sheet__body{font-size:var(--font-summary);line-height:1.7;white-space:pre-wrap}
+.sheet__body:empty{display:none}
+.sheet__src{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:4px}
+.sheet__src:empty{display:none}
+.sheet__src li{font-size:var(--font-caption);color:var(--muted)}
+.sheet__src li::before{content:"· ";font-weight:700}
+.sheet__cta{display:flex;align-items:center;justify-content:center;margin-top:18px;min-height:var(--tap);
+  border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;
+  font-size:var(--font-summary)}
+.sheet__cta[hidden]{display:none}
+
+.card--skeleton{pointer-events:none;cursor:default}
+.sk{background:var(--chip);border-radius:6px;animation:pulse 1.2s ease-in-out infinite}
+.sk--meta{width:34%;height:14px;margin-bottom:12px}
+.sk--title{width:92%;height:18px;margin-bottom:8px}
+.sk--body{width:100%;height:38px}
+@keyframes pulse{50%{opacity:.45}}
+
+.toast{position:fixed;left:50%;bottom:78px;transform:translateX(-50%) translateY(10px);z-index:40;
+  padding:8px 16px;border-radius:16px;background:#191919;color:#fff;font-size:var(--font-caption);
+  opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
+.toast.is-on{opacity:.95;transform:translateX(-50%) translateY(0)}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <header class="hd">
+    <h1><a href="./">WebPaper</a></h1>
+    <span class="hd__note" id="note">불러오는 중…</span>
+  </header>
+  <nav class="filters" id="filters" aria-label="분야">
+    <button class="chip is-on" data-beat="ALL" aria-pressed="true">전체</button>
+    <button class="chip" data-beat="TECH" aria-pressed="false">테크</button>
+    <button class="chip" data-beat="FINANCE" aria-pressed="false">금융</button>
+    <button class="chip" data-beat="CONFLICT" aria-pressed="false">분쟁</button>
+    <button class="chip" data-beat="ECONOMY" aria-pressed="false">경제</button>
+    <button class="chip" data-beat="COMMODITY" aria-pressed="false">원자재</button>
+    <button class="chip" data-beat="POLITICS" aria-pressed="false">정치</button>
+  </nav>
+</div>
+
+<main id="feed" aria-live="polite" aria-busy="true"></main>
+
+<button id="newBadge" class="badge" hidden>새 기사 <b id="badgeN">0</b>건 보기</button>
+<div id="toast" class="toast" role="status"></div>
+
+<dialog id="sheet" class="sheet" aria-label="기사 자세히">
+  <div class="sheet__inner">
+    <div class="sheet__grip" aria-hidden="true"></div>
+    <div class="sheet__meta">
+      <span class="sheet__beat beat"></span>
+      <span class="sheet__when"></span>
+    </div>
+    <h2 class="sheet__title"></h2>
+    <p class="sheet__orig"></p>
+    <p class="sheet__body"></p>
+    <ul class="sheet__src"></ul>
+    <a class="sheet__cta" target="_blank" rel="noopener noreferrer">기사 읽기 →</a>
+  </div>
+</dialog>
+
+<script>
+/* ── 데이터 ────────────────────────────────────────────────────────────
+   feed.json 은 저장소 main 브랜치에 5분마다 커밋된다(파이프라인이 게시할 때마다).
+   사이트(gh-pages)와 데이터(raw)를 분리한 이유: 사이트를 5분마다 다시 배포하면
+   GitHub Pages 빌드 한도(시간당 10회)에 걸린다. raw 는 max-age=300 이라
+   ?t= 쿼리로 캐시를 비껴간다. CORS 는 raw 가 허용한다(access-control-allow-origin: *). */
+const FEED_URL = new URLSearchParams(location.search).get('feed')
+  || 'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/data/feed.json';
+const POLL_MS = 60_000;
+const PAGE = 40;
+
+const BEAT = { TECH:'테크', FINANCE:'금융', CONFLICT:'분쟁', ECONOMY:'경제', COMMODITY:'원자재', POLITICS:'정치' };
+const REGION = { US:'북미', LATAM:'중남미', EUROPE:'유럽', ASIA:'아시아', MIDDLE_EAST:'중동', AFRICA:'아프리카', GLOBAL:'국제' };
+const $ = (s, r=document) => r.querySelector(s);
+
+const feedEl = $('#feed'), badge = $('#newBadge'), badgeN = $('#badgeN'),
+      sheet = $('#sheet'), noteEl = $('#note'), toastEl = $('#toast');
+
+let all = [], beat = 'ALL', shown = 0, seen = new Set(), generatedAt = '';
+
+const titleOf = it => it.h || it.t || '';
+const keyOf = it => (it.ts || it.a || '') + '|' + (it.h || it.t || '');
+
+/* UTC ISO → 한국 시간. 이 기기 밖에서 봐도 KST 로 보이게 고정한다. */
+function kst(ts, withDate){
+  if (!ts) return '';
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  const f = new Intl.DateTimeFormat('ko-KR', {
+    timeZone:'Asia/Seoul', month:'numeric', day:'numeric',
+    hour:'2-digit', minute:'2-digit', hour12:false
+  }).formatToParts(d).reduce((o,p)=>(o[p.type]=p.value,o),{});
+  const hm = f.hour + ':' + f.minute;
+  return withDate ? `${f.month}월 ${f.day}일 ${hm}` : hm;
+}
+function relTime(ts){
+  const d = new Date(ts);
+  if (isNaN(d)) return '';
+  const m = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (m < 1) return '방금';
+  if (m < 60) return m + '분 전';
+  if (m < 24*60) return Math.floor(m/60) + '시간 전';
+  return kst(ts, true);
+}
+
+function setBeat(el, b){
+  if (b && BEAT[b]) { el.textContent = BEAT[b]; el.dataset.beat = b; }
+  else { el.textContent = ''; delete el.dataset.beat; }
+}
+
+function cardNode(it){
+  const el = document.createElement('article');
+  el.className = 'card';
+  el.tabIndex = 0;
+  el.setAttribute('role','button');
+  el.setAttribute('aria-label', titleOf(it));
+
+  const meta = document.createElement('div');
+  meta.className = 'card__meta';
+
+  const beatEl = document.createElement('span');
+  beatEl.className = 'card__beat beat';
+  setBeat(beatEl, it.b);
+
+  const srcEl = document.createElement('span');
+  srcEl.className = 'card__src';
+  srcEl.textContent = (it.src && it.src[0]) || '';
+
+  const timeEl = document.createElement('time');
+  timeEl.className = 'card__time';
+  timeEl.textContent = relTime(it.ts);
+  timeEl.dateTime = it.ts || '';
+  timeEl.title = kst(it.ts, true);
+
+  meta.append(beatEl, srcEl, timeEl);
+
+  const titleEl = document.createElement('h2');
+  titleEl.className = 'card__title';
+  titleEl.textContent = titleOf(it);
+  if (!it.h) titleEl.lang = 'en';
+
+  const sumEl = document.createElement('p');
+  sumEl.className = 'card__summary';
+  sumEl.textContent = it.summary || '';
+
+  el.append(meta, titleEl, sumEl);
+  el.addEventListener('click', () => openSheet(it));
+  el.addEventListener('keydown', e => { if (e.key==='Enter'||e.key===' '){ e.preventDefault(); openSheet(it); } });
+  return el;
+}
+
+function skeletonNode(){
+  const el = document.createElement('div');
+  el.className = 'card card--skeleton';
+  el.setAttribute('aria-hidden','true');
+  el.innerHTML = '<div class="sk sk--meta"></div><div class="sk sk--title"></div><div class="sk sk--body"></div>';
+  return el;
+}
+
+function openSheet(it){
+  setBeat($('.sheet__beat',sheet), it.b);
+  $('.sheet__when',sheet).textContent =
+    [kst(it.ts, true), REGION[it.r]].filter(Boolean).join(' · ');
+  const t = $('.sheet__title',sheet);
+  t.textContent = titleOf(it);
+  if (!it.h) t.lang = 'en'; else t.removeAttribute('lang');
+  const orig = $('.sheet__orig',sheet);
+  orig.textContent = it.h && it.t ? it.t : '';
+  if (orig.textContent) orig.lang = 'en';
+  $('.sheet__body',sheet).textContent = it.summary || '';
+
+  const src = $('.sheet__src',sheet);
+  const list = Array.isArray(it.src) ? it.src : [];
+  src.replaceChildren(...list.map(s => {
+    const li = document.createElement('li'); li.textContent = s; return li;
+  }));
+
+  const cta = $('.sheet__cta',sheet);
+  if (it.url) { cta.href = it.url; cta.hidden = false; }
+  else { cta.removeAttribute('href'); cta.hidden = true; }
+
+  $('.sheet__inner',sheet).scrollTop = 0;
+  sheet.showModal();
+  requestAnimationFrame(() => sheet.classList.add('is-open'));
+  document.documentElement.style.overflow = 'hidden';
+}
+
+function closeSheet(){
+  sheet.classList.remove('is-open');
+  document.documentElement.style.overflow = '';
+  setTimeout(() => { if (!sheet.classList.contains('is-open')) sheet.close(); }, 280);
+}
+
+sheet.addEventListener('close', () => {
+  sheet.classList.remove('is-open');
+  document.documentElement.style.overflow = '';
+});
+sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+
+let y0 = 0, dy = 0, drag = false;
+sheet.addEventListener('touchstart', e => {
+  if ($('.sheet__inner',sheet).scrollTop > 0) return;
+  y0 = e.touches[0].clientY; dy = 0; drag = true; sheet.style.transition = 'none';
+}, {passive:true});
+sheet.addEventListener('touchmove', e => {
+  if (!drag) return;
+  dy = Math.max(0, e.touches[0].clientY - y0);
+  sheet.style.transform = `translateY(${dy}px)`;
+}, {passive:true});
+sheet.addEventListener('touchend', () => {
+  if (!drag) return;
+  drag = false;
+  sheet.style.transition = ''; sheet.style.transform = '';
+  if (dy > 90) closeSheet();
+});
+
+/* ── 렌더 ──────────────────────────────────────────────────────────── */
+function filtered(){
+  return beat === 'ALL' ? all : all.filter(x => x.b === beat);
+}
+
+function render(reset){
+  feedEl.setAttribute('aria-busy','false');
+  const list = filtered();
+  if (!list.length){
+    feedEl.innerHTML = all.length
+      ? '<p class="empty">이 분야 기사가 아직 없어요. 다른 분야를 눌러 보세요.</p>'
+      : '<p class="empty">아직 보도된 기사가 없어요.<br>5분마다 자동으로 확인해요.</p>';
+    shown = 0;
+    return;
+  }
+  if (reset) shown = 0;
+  const from = reset ? 0 : shown;
+  const next = Math.min(list.length, from + PAGE);
+  const frag = list.slice(from, next).map(cardNode);
+
+  if (reset) feedEl.replaceChildren(...frag);
+  else {
+    const btn = $('#feed .more');
+    if (btn) btn.remove();
+    feedEl.append(...frag);
+  }
+  shown = next;
+
+  if (shown < list.length){
+    const more = document.createElement('div');
+    more.className = 'more';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = `더 보기 (${list.length - shown}건)`;
+    b.addEventListener('click', () => render(false));
+    more.append(b);
+    feedEl.append(more);
+    io.unobserve(more); io.observe(more);
+  }
+}
+
+const io = new IntersectionObserver(es => {
+  for (const e of es) if (e.isIntersecting && shown < filtered().length) render(false);
+}, {rootMargin:'600px'});
+
+/* ── 불러오기 ────────────────────────────────────────────────────── */
+async function load(){
+  const r = await fetch(`${FEED_URL}?t=${Date.now()}`, {cache:'no-store'});
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const d = await r.json();
+  if (!Array.isArray(d.items)) throw new Error('bad payload');
+  return d;
+}
+
+function note(){
+  if (!generatedAt) return;
+  const d = new Date(generatedAt);
+  if (isNaN(d)) return;
+  noteEl.innerHTML = `5분마다 갱신 · <b>${kst(generatedAt)}</b> 기준 ${all.length}건`;
+}
+
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('is-on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toastEl.classList.remove('is-on'), 2600);
+}
+
+async function poll(first){
+  try {
+    const d = await load();
+    const next = d.items;
+    generatedAt = d.generated_at || '';
+    all = next;
+    note();
+    if (first){ all = next; seen = new Set(next.map(keyOf)); render(true); return; }
+    const fresh = next.filter(it => !seen.has(keyOf(it)));
+    all = next;
+    seen = new Set(next.map(keyOf(it)));
+    if (fresh.length){
+      if (beat === 'ALL' || fresh.some(it => it.b === beat)){
+        badgeN.textContent = fresh.length;
+        badge.hidden = false;
+      }
+      toast(`새 기사 ${fresh.length}건`);
+    }
+  } catch (e) {
+    if (first){
+      feedEl.innerHTML = '<p class="empty">피드를 불러오지 못했어요.<br>' +
+        '잠시 뒤 다시 시도할게요.<button type="button" id="retry">지금 다시 시도</button></p>';
+      $('#retry').addEventListener('click', () => location.reload());
+      noteEl.textContent = '연결 실패';
+    }
+  }
+}
+
+badge.addEventListener('click', () => {
+  badge.hidden = true;
+  render(true);
+  window.scrollTo({ top:0, behavior:'smooth' });
+});
+
+$('#filters').addEventListener('click', e => {
+  const btn = e.target.closest('.chip');
+  if (!btn) return;
+  document.querySelectorAll('.chip').forEach(b => {
+    const on = b === btn;
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+  beat = btn.dataset.beat;
+  badge.hidden = true;
+  render(true);
+  window.scrollTo({ top:0, behavior:'smooth' });
+});
+
+feedEl.replaceChildren(...Array.from({length:3}, skeletonNode));
+poll(true);
+setInterval(() => { if (!document.hidden) poll(false); }, POLL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(false); });
+</script>
+</body>
+</html>

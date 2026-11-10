@@ -23,15 +23,75 @@ SYSTEM = (
 )
 
 
-def prompt_for(title, text, thin=False):
+# 사이트는 한국어 제목이 필요하고, 텔레그램은 요약만 쓴다. 제목을 따로 부르면
+# 무료 쿼터가 두 배로 드니 **한 번의 호출**에서 두 개를 같이 받는다(2026-11-10).
+HEAD_RULE = (
+    "\n\n[출력 형식]\n"
+    "맨 첫 줄: `제목: <한국어 제목>`\n"
+    "둘째 줄부터: 위 규칙대로 쓴 2문장 요약(접두어 없이)\n"
+    "한국어 제목은 28자 이내, 마침표 없이, 사건을 담은 명사형. 원문 제목을 직역하지 말고 "
+    "핵심(누가·무엇을·어디서)을 한국어로 다시 쓴다. 예: `EU, AI 규제 2단계 시행령 초안 공개`"
+)
+
+def prompt_for(title, text, thin=False, head=False):
+    tail = HEAD_RULE if head else ""
     if thin:
         return (f"{SYSTEM}\n\n[기사 제목] {title}\n\n[기사 요약문(짧음)]\n{text[:800]}\n\n"
                 "본문을 못 가져와 위 스니펫만 있다. 스니펫에 적힌 사실만으로 2문장 한국어 요약을 써라. "
-                "숫자·인용·배경은 스니펫에 있는 것만 쓰고, 추측으로 채우지 마라. 180자를 넘기지 마라.")
+                "숫자·인용·배경은 스니펫에 있는 것만 쓰고, 추측으로 채우지 마라. 180자를 넘기지 마라."
+                + tail)
     return (f"{SYSTEM}\n\n[기사 제목] {title}\n\n[기사 본문]\n{text[:5000]}\n\n"
             "위 기사로 2문장 한국어 요약을 써라. 220자를 넘기지 마라. "
             "직함·직책은 원문 그대로 옮겨라(Chair=의장, governor=이사, minister=장관). "
-            "원문에 없는 수치나 직함을 만들어내지 마라.")
+            "원문에 없는 수치나 직함을 만들어내지 마라." + tail)
+
+# ── 제목/요약 분리 ────────────────────────────────────────────────────────────
+HEAD_RE = re.compile(r"^\s*(?:\*\*)?(?:제목|타이틀|headline|title)\s*(?:\*\*)?\s*[:：]\s*(.*)$", re.I)
+BODY_RE = re.compile(r"^\s*(?:\*\*)?(?:요약|본문|summary)\s*(?:\*\*)?\s*[:：]\s*", re.I)
+
+def clean_head(s):
+    s = (s or "").strip().strip("*`# ")
+    s = s.strip('"“”\'‘’「」『』[]')
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[.。!?！？…,，·\-\s]+$", "", s)       # 제목엔 마침표를 붙이지 않는다
+    if len(s) > 40:                                  # 40자를 넘으면 어절 경계에서 자른다
+        cut = s.rfind(" ", 0, 40)
+        s = s[:cut if cut > 12 else 40].rstrip()
+    return s
+
+def split_head(raw):
+    """모델 응답 → (제목, 본문). 형식을 안 지키면 제목은 빈 문자열(사이트는 원문제목으로 폴백)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return "", ""
+    if raw.startswith("{"):                          # JSON 으로 답한 경우
+        try:
+            d = json.loads(raw[raw.find("{"): raw.rfind("}") + 1])
+            for k in ("제목", "title", "headline"):
+                if d.get(k):
+                    for k2 in ("요약", "summary", "body", "content"):
+                        if d.get(k2):
+                            return clean_head(str(d[k])), str(d[k2]).strip()
+        except Exception:
+            pass
+    head, body = "", []
+    for line in raw.splitlines():
+        m = HEAD_RE.match(line)
+        if m and not head and not body:
+            head = m.group(1)
+            continue
+        body.append(BODY_RE.sub("", line))
+    return clean_head(head), "\n".join(body).strip()
+
+def _clean_body(out, thin):
+    out = re.sub(r"\s+", " ", (out or "")).strip()
+    out = re.sub(r"^(?:\*\*)?(?:요약|본문|summary)\s*(?:\*\*)?\s*[:：]?\s*", "", out, flags=re.I)
+    out = re.sub(r"^(다음은|위 기사는)\s*", "", out)
+    if len(out) > 320:                               # 길면 문장 경계에서 자른다
+        cut = max(out.rfind("다. ", 0, 320), out.rfind("요. ", 0, 320))
+        if cut > 80:
+            out = out[:cut + 2]
+    return out
 
 
 UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
@@ -149,59 +209,77 @@ def is_complete(s, min_len=80):
     return s[-1] in END_OK
 
 
-def summarize(title, text, dry=False, thin=False):
-    prompt = prompt_for(title, text, thin)
-    min_len = 60 if thin else 80
-    if dry:
-        return prompt
+def _generate(prompt, accept=None):
+    """제공자 1순환. accept(raw) 가 거짓이면 다음 제공자로 넘어간다(잘린 응답 폐기)."""
     t_start = time.time()
     # 재시도 없이 제공자 1순환. 2026-11-08: 2회 재시도 × 3개 제공자 × 90초 타임아웃이
     # 겹치면 회차가 5분을 넘겨 다음 트리거와 충돌했다. 5분 주기에서는 빨리 포기하는 게 맞다.
-    for attempt in range(1):
-        for name, fn in PROVIDERS:
-            if time.time() - t_start > 60:
-                print("[llm] 60초 예산 초과 — 이번 회차 요약 포기", flush=True)
-                return ""
-            key = os.environ.get(name, "").strip()
-            if not key or _cooling(name):
-                continue
-            try:
-                # 5xx 는 순간 장애다. 2026-11-10 실측: Gemini 가 회차마다 503 을 뱉어
-                # 한 시간 넘게 조용했다. 429(한도)는 재시도해도 같으니 즉시 포기하고
-                # 쿨다운으로 넘기지만, 5xx 는 3초 뒤 한 번만 더 시도한다(60초 예산 안).
-                out = ""
-                for _try in (1, 2):
-                    try:
-                        out = fn(key, prompt)
-                        break
-                    except Exception as e2:
-                        msg2 = str(e2)
-                        transient = any(c in msg2 for c in ("500", "502", "503", "504"))
-                        if _try == 1 and transient and time.time() - t_start < 50:
-                            time.sleep(3)
-                            continue
-                        raise
-                out = re.sub(r"\s+", " ", out).strip()
-                out = re.sub(r"^(요약[:：]?|다음은|위 기사는)\s*", "", out)
-                if len(out) > 320:                # 길면 문장 경계에서 자른다
-                    cut = max(out.rfind("다. ", 0, 320), out.rfind("요. ", 0, 320))
-                    if cut > 80:
-                        out = out[:cut + 2]
-                if is_complete(out, min_len):
-                    # 모델이 놓친 평서체(…습니다)를 해요체로 강제 정규화
-                    try:
-                        import writer
-                        out = writer.korean_smooth(out)
-                    except Exception:
-                        pass
+    for name, fn in PROVIDERS:
+        if time.time() - t_start > 60:
+            print("[llm] 60초 예산 초과 — 이번 회차 요약 포기", flush=True)
+            return ""
+        key = os.environ.get(name, "").strip()
+        if not key or _cooling(name):
+            continue
+        try:
+            # 5xx 는 순간 장애다. 2026-11-10 실측: Gemini 가 회차마다 503 을 뱉어
+            # 한 시간 넘게 조용했다. 429(한도)는 재시도해도 같으니 즉시 포기하고
+            # 쿨다운으로 넘기지만, 5xx 는 3초 뒤 한 번만 더 시도한다(60초 예산 안).
+            out = ""
+            for _try in (1, 2):
+                try:
+                    out = fn(key, prompt)
+                    break
+                except Exception as e2:
+                    msg2 = str(e2)
+                    transient = any(c in msg2 for c in ("500", "502", "503", "504"))
+                    if _try == 1 and transient and time.time() - t_start < 50:
+                        time.sleep(3)
+                        continue
+                    raise
+            if out:
+                if accept is None or accept(out):
                     return out
-                print(f"[{name}] too short: {out[:40]}", flush=True)
-            except Exception as e:
-                msg = str(e)
-                if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
-                    _COOLDOWN[name] = time.time() + 1800      # 30분간 건너뛴다
-                print(f"[{name}] {type(e).__name__}: {msg[:120]}", flush=True)
+                print(f"[{name}] 응답 거부 — 다음 제공자", flush=True)
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg or "quota" in msg.lower() or "rate" in msg.lower():
+                _COOLDOWN[name] = time.time() + 1800      # 30분간 건너뛴다
+            print(f"[{name}] {type(e).__name__}: {msg[:120]}", flush=True)
     return ""
+
+
+def summarize_parts(title, text, dry=False, thin=False):
+    """(한국어 제목, 요약문). 제목은 사이트용, 요약은 텔레그램 본문.
+
+    제목 파싱에 실패해도 요약은 그대로 쓴다 — 제목은 있으면 좋은 것이지
+    게시 조건이 아니다.
+    """
+    prompt = prompt_for(title, text, thin, head=True)
+    min_len = 60 if thin else 80
+    if dry:
+        return "", prompt
+    raw = _generate(prompt, accept=lambda r: is_complete(_clean_body(split_head(r)[1], thin), min_len))
+    if not raw:
+        return "", ""
+    head, body = split_head(raw)
+    body = _clean_body(body, thin)
+    if not is_complete(body, min_len):
+        print(f"[llm] too short: {body[:40]}", flush=True)
+        return "", ""
+    try:                                  # 모델이 놓친 평서체(…습니다)를 해요체로 강제 정규화
+        import writer
+        body = writer.korean_smooth(body)
+    except Exception:
+        pass
+    return head, body
+
+
+def summarize(title, text, dry=False, thin=False):
+    """요약문만 필요할 때(기존 호출부·CLI)."""
+    if dry:
+        return prompt_for(title, text, thin)
+    return summarize_parts(title, text, thin=thin)[1]
 
 
 def main():

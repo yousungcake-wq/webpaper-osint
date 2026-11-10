@@ -1146,7 +1146,8 @@ def _llm_publish_locked(con, cfg, llm):
     if not d:
         log("publish: 후보 없음(모두 필터됨)")
         return None
-    body = llm.summarize(d["title"], d["text"], thin=bool(d.get("thin")))
+    head, body = llm.summarize_parts(d["title"], d["text"], thin=bool(d.get("thin")))
+    d["headline"] = head or ""                       # 사이트 제목(텔레그램 본문엔 안 쓴다)
     if body and not llm.is_complete(body, 60 if d.get("thin") else 80):      # 중간에 끊긴 요약은 내보내지 않는다
         log(f"llm: 잘린 요약 폐기 ({len(body)}자) — 초안 유지")
         body = ""
