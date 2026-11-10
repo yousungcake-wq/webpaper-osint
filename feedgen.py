@@ -13,9 +13,9 @@
 계약(사이트가 읽는 스키마)
   { "generated_at": ISO, "count": N,
     "items": [ {"h":한국어제목|"", "t":원문제목, "summary":요약|"", "url":URL|"",
-                "src":["매체"], "b":"TECH|ECONOMY|CONFLICT|POLITICS|OTHER", "r":지역, "ts":ISO} ] }
-  점수(s)와 원시 시각(a)은 싣지 않는다 — 화면에 쓰지 않는 값까지 5분마다 커밋하면
-  저장소만 무거워진다.
+                "src":["매체"], "b":"TECH|ECONOMY|CONFLICT|POLITICS|OTHER", "r":지역,
+                "s":중요도(소수), "ts":ISO} ] }
+  원시 시각(a)은 싣지 않는다(ts 로 대체). s 는 속보 티커의 '중요도' 정렬에 쓴다.
 
   python3 feedgen.py            # data/feed.json 갱신
   python3 feedgen.py --check    # 현황만 출력
@@ -85,6 +85,7 @@ def build(days=DAYS, max_items=MAX_ITEMS):
             "t": (r.get("t") or "").strip()[:180],
             "summary": (r.get("x") or "").strip()[:1200],
             "url": r.get("u") or "",
+            "s": round(float(r.get("s") or 0), 1),      # 중요도(속보 티커 정렬용)
             "src": [r.get("f")] if r.get("f") else [],
             "b": beat,
             "r": region,

@@ -66,7 +66,7 @@ a{color:inherit}
 
 /* 결과 정보 + 정렬 세그먼트 (네이티브 select 대신) */
 .result-info{display:flex;align-items:center;gap:8px;
-  padding:6px var(--pad) 8px calc(var(--pad) + var(--back-w) + var(--hdr-gap));
+  padding:6px var(--pad) 8px var(--pad);
   font-size:var(--font-caption);color:var(--muted);max-width:var(--maxw);margin:0 auto}
 .result-info[hidden]{display:none}
 .result-info b{color:var(--fg);font-weight:700}
@@ -77,7 +77,7 @@ a{color:inherit}
 
 main{padding:0 var(--pad)}
 /* 최근 검색어: 검색 입력창과 왼쪽을 맞춘다 */
-.recent-section{padding:20px var(--pad) 0 calc(var(--pad) + var(--back-w) + var(--hdr-gap))}
+.recent-section{padding:20px var(--pad) 0 var(--pad)}
 .section-label{font-size:12px;font-weight:700;color:var(--muted);margin:0 0 10px;letter-spacing:.02em}
 .recent-list{display:flex;flex-wrap:wrap;gap:8px}
 .recent-chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border:1px solid var(--line);
@@ -575,7 +575,7 @@ function renderRecent(){
       setRecent(getRecent().filter(v => v !== kw));
       renderRecent();
     });
-    b.addEventListener('click', () => applyQuery(kw, true));
+    b.addEventListener('click', () => { qEl.value = kw; applyQuery(kw, true); });
     return b;
   }));
 }
@@ -586,8 +586,10 @@ let debounce = null;
 let composing = false;       // 한글 조합 중 Enter 를 무시한다
 
 function applyQuery(val, commit){
+  // 입력 중에는 qEl.value 를 절대 덮어쓰지 않는다 — trim() 이 방금 친 띄어쓰기를 지워 버린다.
+  // 값 정리는 확정(Enter)이나 명시적 호출에서만 한다.
   state.q = (val || '').trim();
-  qEl.value = state.q;                        // IME 가 덧붙인 잔여 텍스트를 정리
+  if (commit) qEl.value = state.q;
   clearBtn.classList.toggle('show', !!state.q);
   if (commit && state.q) addRecent(state.q);
   syncHash();
@@ -624,9 +626,9 @@ function commitFromInput(){
 $('#searchForm').addEventListener('submit', e => { e.preventDefault(); commitFromInput(); });
 qEl.addEventListener('keydown', e => {
   if (e.key === 'Enter'){ e.preventDefault(); commitFromInput(); }
-  if (e.key === 'Escape'){ e.preventDefault(); applyQuery('', false); qEl.blur(); }
+  if (e.key === 'Escape'){ e.preventDefault(); qEl.value = ''; applyQuery('', false); qEl.blur(); }
 });
-clearBtn.addEventListener('click', () => { applyQuery('', false); qEl.focus(); });
+clearBtn.addEventListener('click', () => { qEl.value = ''; applyQuery('', false); qEl.focus(); });
 
 /* ── 정렬 세그먼트 (네이티브 select 대신) ─────────────────────────── */
 $('.seg').addEventListener('click', e => {
