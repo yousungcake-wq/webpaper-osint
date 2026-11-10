@@ -224,8 +224,9 @@ _FB_CACHE = {}
 def fb_adj(feed="", beat=""):
     """주간 점검 반응(👎/👍)에서 나온 점수 보정. feedback.py apply 가 config.json 에 쓴다.
 
-    표본이 작아 소스 -4~+2, 비트 -3~+1 로 묶여 있고, 창(기본 21일)을 벗어난
-    반응은 사라지므로 보정도 같이 옛 상태로 돌아간다. 읽기 실패는 0으로 처리한다.
+    값은 feedback.compute() 가 표본 수로 가중해 만든다(소스별 -4~+2). 비트 보정은
+    2026-11-10 없앴지만 옛 config 를 읽을 수 있게 키는 남겨 둔다. 창(기본 21일)을
+    벗어난 반응은 사라지므로 보정도 같이 옛 상태로 돌아간다. 읽기 실패는 0.
     """
     try:
         mt = os.path.getmtime(os.path.join(NEWSDIR, "config.json"))

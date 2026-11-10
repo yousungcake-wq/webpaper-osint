@@ -11,10 +11,13 @@
  "mode": "llm",
  "feedback": {
   "src": {
-   "FormatBiz": -2.5
+   "Al-Monitor": 0.4,
+   "Guardian World": -0.8,
+   "Africa Report": -1.7,
+   "FormatBiz": -2.9,
+   "IntelliNews": -2.9
   },
-  "beat": {},
   "window_days": 21,
-  "at": "2026-11-10 08:37 UTC"
+  "at": "2026-11-10 09:19 UTC"
  }
 }
