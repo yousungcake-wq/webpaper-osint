@@ -3,6 +3,10 @@
 @webpaperHQ 텔레그램 채널에 뉴스를 보도하는 봇. 폰(nanoMuse 샌드박스)에서 돌던 것을
 GitHub Actions 로 옮긴 버전이다. 폰이 꺼지거나 재부팅돼도 계속 돈다.
 
+**웹사이트도 같이 나간다: <https://yousungcake-wq.github.io/webpaper-osint/>**
+같은 회차가 텔레그램에 게시하면서 `data/feed.json` 을 갱신하고, 정적 페이지가 그걸 읽는다.
+구조·무료 한도·한계는 [`docs/SITE.md`](docs/SITE.md).
+
 ## 어떻게 도나
 
 ```
@@ -11,7 +15,7 @@ GitHub 예약(*/5분)  →  run_once.py  →  한 회차
    2. sources.txt 96개 중 이번 샤드(1/2)만 수집        ← 피드당 10분 주기
    3. beats.classify_pending()  비트 분류(LLM 1콜)
    4. osint.llm_publish()  비트·지역 균형 선택 → 본문 추출 → 요약 → 텔레그램 전송
-   5. 게시했으면 상태 1줄 append → 즉시 커밋
+   5. 게시했으면 상태 1줄 append + feedgen → data/feed.json → 즉시 커밋
 ```
 
 - 게시 상한 시간당 10건, 점수 하한 11.5 (`config.json`)
@@ -72,3 +76,7 @@ VPS 로 옮기는 게 맞다.
 - `writer.py` — 본문 추출(JSON-LD·문단), 구글뉴스 URL 해석, 해요체 변환
 - `news_fetch.py` — RSS/Atom 파서
 - `sources.txt` — 96개 소스 (`분류|이름|URL`)
+- `feedgen.py` — `state/posts` → `data/feed.json` (사이트용, 최근 5일·최대 300건)
+- `backfill_head.py` — 예전 게시물에 한국어 제목 채우기(1회성)
+- `site/index.html` — 웹사이트 (HTML·CSS·JS 한 파일)
+- `docs/SITE.md` — 사이트 구조·무료 한도·한계

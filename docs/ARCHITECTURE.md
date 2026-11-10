@@ -10,6 +10,9 @@
 **96개 RSS/Google News 피드를 5분마다 수집해, 점수화·분류·균형 배분을 거쳐 기사 1건을
 고르고, LLM으로 2문장 한국어 요약을 만들어 텔레그램 채널(@webpaperHQ)에 게시하는
 파이프라인.** 실행은 GitHub Actions 러너에서, 트리거는 cron-job.org 에서 온다.
+같은 회차가 `data/feed.json` 을 갱신하고 정적 사이트(<https://yousungcake-wq.github.io/webpaper-osint/>)가
+그 파일을 읽어 웹 피드로도 보여준다 — 출력이 둘(텔레그램·웹)이고 입력·선택 로직은 하나다.
+사이트 쪽 결정과 한도는 [`SITE.md`](SITE.md).
 
 ---
 
@@ -20,6 +23,7 @@
 | **cron-job.org** | 5분마다 GitHub API `workflow_dispatch` 호출 (트리거만) | 어떤 데이터도 보지 않음 |
 | **GitHub Actions** | 실행 환경. 수집·채점·선택·요약·전송·상태 커밋 | 스스로 시간을 세지 않음(트리거가 없으면 안 돎) |
 | **텔레그램** | 결과 출력 (채널 게시) | 입력 없음 |
+| **GitHub Pages + `site/index.html`** | 결과 출력 (웹 피드, `data/feed.json` 을 읽음) | 스스로 데이터를 만들지 않음 |
 | **RSS / Google News** | 입력 | — |
 | **LLM API** (Gemini·Groq·OpenRouter) | 요약 + 비트 분류 | 사실 검증은 하지 않음 |
 | **폰 nanoMuse 샌드박스** | 주간 점검·자유시간·꿈꾸기 보고서 작성 | **보도 파이프라인에는 관여하지 않음** |
