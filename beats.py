@@ -15,8 +15,9 @@ import re
 import time
 import urllib.request
 
-BEATS = ["TECH", "ECONOMY", "CONFLICT", "POLITICS"]
-TARGET = {"TECH": 2, "ECONOMY": 4, "CONFLICT": 2, "POLITICS": 2}   # 10건 기준 목표 비율
+BEATS = ["TECH", "ECONOMY", "CONFLICT", "POLITICS", "OTHER"]
+# OTHER(기타)도 게시한다 — "명확히 분류되지 않는 국제 뉴스"이지 쓰레기 통이 아니다.
+TARGET = {"TECH": 2, "ECONOMY": 3, "CONFLICT": 2, "POLITICS": 1, "OTHER": 2}  # 10건 기준
 
 # 소스 카테고리·예전 상태값을 새 비트로 흡수한다.
 LEGACY = {"FINANCE": "ECONOMY", "COMMODITY": "ECONOMY", "MARKETS": "ECONOMY"}
@@ -24,7 +25,7 @@ LEGACY = {"FINANCE": "ECONOMY", "COMMODITY": "ECONOMY", "MARKETS": "ECONOMY"}
 def norm_beat(b):
     b = (b or "").strip().upper()
     b = LEGACY.get(b, b)
-    return b if b in BEATS or b == "OTHER" else "OTHER"
+    return b if b in BEATS else "OTHER"
 WINDOW = 10                                       # 분포를 볼 최근 게시물 수
 
 UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
@@ -55,12 +56,13 @@ KW = {
                 "rate cut", "rate hike", "fed", "ecb", "boj", "trade deal", "tariff",
                 "export", "import", "budget", "deficit", "stimulus", "productivity",
                 "retail sales", "housing", "manufacturing", "pmi"],
-    "POLITICS": ["election", "vote", "parliament", "president", "prime minister",
-                 "summit", "diplomat", "foreign minister", "treaty", "coalition",
-                 "referendum", "nato", "eu", "united nations", "g7", "g20", "brics",
-                 "opposition", "legislation", "congress", "senate", "policy", "border",
-                 "immigration", "protest", "embassy", "ambassador"],
-    "OTHER": ["celebrity", "football", "soccer", "cricket", "world cup", "premier league",
+    "POLITICS": ["election", "vote", "parliament", "prime minister", "coalition",
+                 "referendum", "opposition", "legislation", "congress", "senate",
+                 "cabinet", "impeach", "ballot", "policy", "border", "immigration",
+                 "protest"],
+    "OTHER": ["summit", "diplomat", "diplomatic", "foreign minister", "treaty", "talks",
+              "nato", "united nations", "g7", "g20", "brics", "embassy", "ambassador",
+              "state visit", "celebrity", "football", "soccer", "cricket", "world cup", "premier league",
               "k-pop", "box office", "taylor swift", "nba", "nfl", "olympic", "tennis",
               "golf", "fashion", "reality show", "award", "horoscope", "recipe",
               "royal family", "gossip", "obituar", "lottery", "weather forecast",
@@ -78,6 +80,7 @@ OVERRIDES = [
     (r"\bai\b.{0,12}\bchip", "TECH"), (r"data cent(er|re)", "TECH"),
     (r"\bopec\b", "ECONOMY"), (r"\bcrude oil\b", "ECONOMY"),
     (r"\bpresident trump\b.{0,30}tariff", "ECONOMY"),
+    (r"\b(election|parliament|ballot|referendum|congress|senate)\b", "POLITICS"),
 ]
 
 # ── 지역 축 (2026-11-08: "글로벌이 이란·소말리아·나이지리아·미국이 끝이냐" 지적) ──
@@ -134,7 +137,7 @@ def region_deficits(con, window=12):
 
 CAT_HINT = {"tech": "TECH", "finance": "ECONOMY", "conflict": "CONFLICT",
             "economy": "ECONOMY", "commodity": "ECONOMY", "business": "ECONOMY",
-            "politics": "POLITICS"}
+            "politics": "POLITICS"}   # 모르는 카테고리는 OTHER
 
 
 _PAT = {}
@@ -166,19 +169,31 @@ def kw_beat(title, cat=""):
         if s:
             scores[b] = s
     if scores:
-        # OTHER 가 다른 비트보다 확실히 많을 때만 OTHER
-        best = max(scores, key=lambda b: scores[b])
-        if best == "OTHER" and scores[best] < 2 and len(scores) > 1:
-            scores.pop("OTHER", None)
-            best = max(scores, key=lambda b: scores[b])
+        ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+        best, top = ranked[0]
+        # 1점짜리 동률 → "명확히 분류되지 않은 뉴스" (2026-11-10)
+        # 단일 키워드로 한 비트만 잡히면 그 비트를 유지한다(예: election → POLITICS)
+        if top <= 1 and len(ranked) >= 2 and ranked[1][1] == top:
+            return "OTHER"
+        if best == "OTHER" and top < 2 and len(ranked) > 1:
+            return ranked[1][0]
         return best
-    return CAT_HINT.get(cat, "POLITICS")
+    return CAT_HINT.get(cat, "OTHER")   # 단서가 없으면 정치가 아니라 기타
 
 
 # ── LLM 배치 분류 ────────────────────────────────────────────────
 PROMPT = """다음 뉴스 제목을 비트와 지역으로 분류해라. 설명 없이 "번호:비트:지역" 형식으로만 한 줄씩 답한다.
-비트: TECH(기술·AI·반도체·플랫폼), ECONOMY(경제 전체 — 금융·시장·금리·실적·M&A·원자재·에너지·광물·곡물·무역·고용·물가), CONFLICT(전쟁·분쟁·안보·테러), POLITICS(국제정치·선거·외교), OTHER(연예·스포츠·생활 등 위 넷에 안 들어가는 것)
-경제와 기술 중 애매하면 그 기사의 **주된 축**으로 고른다(예: 반도체 실적 전망 → TECH, 유가·금리·물가 → ECONOMY).
+비트:
+- TECH: 기술·AI·반도체·플랫폼·사이버·우주
+- ECONOMY: 경제 전체 — 금융·증시·금리·물가·무역·기업 실적·M&A·원자재·에너지·노동
+- CONFLICT: 전쟁·무력 충돌·공습·테러·안보 위기·군사 작전
+- POLITICS: **선거·의회·정당·내각 인선·국내 정치** (좁게 잡는다)
+- OTHER: 위 넷에 **명확히** 안 들어가는 뉴스. 정상회의·외교 접촉·인물 동향·국제기구·사회·문화·재난·사법 등.
+
+판단 기준: 확신이 안 서면 OTHER 로 보낸다. 예를 들어 "카타르 총리, 파리 G7 회의서 이란 위기 논의"는
+선거·의회가 아니라 외교 일정이므로 POLITICS 가 아니라 OTHER:국제 다.
+경제와 기술이 겹치면 주된 축으로 고른다(반도체 실적 전망 → TECH, 유가·금리·물가 → ECONOMY).
+홍보성 보도자료·행사 안내·연예 가십은 뉴스가 아니므로 분류 대상이 아니다.
 지역: EUROPE(유럽·러시아 서부), LATAM(중남미·카리브), US(미국·캐나다), ASIA(동아시아·남아시아·동남아·중앙아·오세아니아), AFRICA(사하라 이남 아프리카), MIDDLE_EAST(중동·북아프리카·이란·이스라엘), GLOBAL(여러 지역에 걸친 사안이거나 본문의 주체가 특정 국가가 아님)
 사건이 일어난 곳이 아니라 **기사의 주체** 기준으로 고른다.
 
@@ -286,10 +301,9 @@ def classify_pending(con, per_beat=10, max_total=60):
         ORDER BY score DESC LIMIT 400""").fetchall()
     buckets = {}
     for _id, title, beat, cat in rows:
-        b = beat or kw_beat(title, cat)
-        if b == "OTHER":
-            con.execute("UPDATE items SET beat='OTHER', beat_src='kw' WHERE id=?", (_id,))
-            continue
+        # OTHER 도 후보로 넣는다 — LLM 이 더 정확한 비트로 재분류할 기회를 준다
+        # (2026-11-10: 예전엔 OTHER 를 여기서 버려서 '기타'가 영원히 비어 있었다)
+        b = norm_beat(beat or kw_beat(title, cat))
         buckets.setdefault(b, []).append(_id)
     con.commit()
 

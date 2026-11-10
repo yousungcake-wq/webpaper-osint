@@ -15,6 +15,7 @@
   --t-tech:#3182f6; --t-economy:#0e9f6e; --t-conflict:#e02424; --t-politics:#4b5563; --t-other:#8b95a1;
   --font-base:16px; --font-summary:15px; --font-caption:13px;
   --lh:1.6; --radius:16px; --maxw:640px; --safe-b:env(safe-area-inset-bottom,0px);
+  --pad:16px; --back-w:40px; --hdr-gap:10px;
 }
 :root[data-theme="dark"]{
   --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
@@ -37,8 +38,8 @@ a{color:inherit}
 .app{max-width:var(--maxw);margin:0 auto}
 
 .header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);
-  padding:10px 16px;display:flex;align-items:center;gap:10px}
-.back-btn{width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:12px;
+  padding:10px var(--pad);display:flex;align-items:center;gap:var(--hdr-gap)}
+.back-btn{width:var(--back-w);height:40px;display:grid;place-items:center;border:0;border-radius:12px;
   background:transparent;color:var(--muted);cursor:pointer;flex:0 0 auto;text-decoration:none}
 .back-btn:hover{background:var(--chip);color:var(--fg)}
 .search-wrap{flex:1;position:relative}
@@ -53,7 +54,7 @@ a{color:inherit}
 .clear-btn.show{display:grid}
 .clear-btn:hover{background:var(--chip);color:var(--fg)}
 
-.filter-bar{display:flex;gap:8px;overflow-x:auto;padding:10px 16px 8px;scrollbar-width:none;
+.filter-bar{display:flex;gap:8px;overflow-x:auto;padding:10px var(--pad) 8px;scrollbar-width:none;
   max-width:var(--maxw);margin:0 auto}
 .filter-bar::-webkit-scrollbar{display:none}
 .chip{flex:0 0 auto;min-height:34px;padding:0 13px;border:0;border-radius:17px;background:var(--chip);
@@ -63,20 +64,26 @@ a{color:inherit}
   box-shadow:inset 0 0 0 1.5px var(--accent)}
 .fsep{flex:0 0 auto;width:1px;height:18px;align-self:center;background:var(--line);margin:0 2px}
 
-.result-info{display:flex;align-items:center;gap:8px;padding:6px 20px 8px;font-size:var(--font-caption);
-  color:var(--muted);max-width:var(--maxw);margin:0 auto}
+/* 결과 정보 + 정렬 세그먼트 (네이티브 select 대신) */
+.result-info{display:flex;align-items:center;gap:8px;
+  padding:6px var(--pad) 8px calc(var(--pad) + var(--back-w) + var(--hdr-gap));
+  font-size:var(--font-caption);color:var(--muted);max-width:var(--maxw);margin:0 auto}
 .result-info[hidden]{display:none}
 .result-info b{color:var(--fg);font-weight:700}
-.sort-select{margin-left:auto;padding:5px 8px;border:1px solid var(--line);border-radius:9px;
-  background:var(--bg);color:var(--fg);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;outline:none}
+.seg{margin-left:auto;display:flex;background:var(--chip);border-radius:10px;padding:2px}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:12.5px;font-weight:600;
+  padding:5px 10px;border-radius:8px;cursor:pointer;transition:background .12s,color .12s}
+.seg button[aria-pressed="true"]{background:var(--bg);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.10)}
 
-main{padding:0 16px}
-.recent-section{padding:18px 4px 0}
+main{padding:0 var(--pad)}
+/* 최근 검색어: 검색 입력창과 왼쪽을 맞춘다 */
+.recent-section{padding:20px var(--pad) 0 calc(var(--pad) + var(--back-w) + var(--hdr-gap))}
 .section-label{font-size:12px;font-weight:700;color:var(--muted);margin:0 0 10px;letter-spacing:.02em}
 .recent-list{display:flex;flex-wrap:wrap;gap:8px}
-.recent-chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border:0;
-  border-radius:17px;background:var(--chip);color:var(--fg);font:inherit;font-size:13.5px;cursor:pointer}
+.recent-chip{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 12px;border:1px solid var(--line);
+  border-radius:17px;background:var(--bg);color:var(--fg);font:inherit;font-size:13.5px;cursor:pointer}
 .recent-chip .x{color:var(--muted);font-size:11px}
+.recent-empty{color:var(--muted);font-size:13px}
 
 .card{display:block;padding:16px;border:1px solid var(--line);border-radius:var(--radius);
   margin-bottom:10px;text-decoration:none;color:inherit;cursor:pointer;
@@ -97,6 +104,7 @@ main{padding:0 16px}
   font-variant-numeric:tabular-nums}
 .card-title{font-size:16px;font-weight:700;line-height:1.45;margin:0 0 6px;letter-spacing:-.01em;
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card-title[lang="en"]{font-size:15px}
 .card-body{font-size:14px;line-height:1.6;color:var(--muted);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 mark{padding:0 1px;border-radius:2px;background:color-mix(in srgb,var(--accent) 22%,transparent);
@@ -104,12 +112,35 @@ mark{padding:0 1px;border-radius:2px;background:color-mix(in srgb,var(--accent) 
 
 .empty-state{text-align:center;padding:56px 20px;color:var(--muted);font-size:14px}
 .empty-title{font-size:16px;font-weight:700;color:var(--fg);margin-bottom:6px}
-.loading{padding:40px 20px;text-align:center;color:var(--muted);font-size:14px}
-.sk{background:var(--chip);border-radius:6px;animation:fade 1.3s ease-in-out infinite}
-@keyframes fade{0%,100%{opacity:1}50%{opacity:.45}}
 .more{display:grid;place-items:center;padding:6px 0 18px}
 .more button{min-height:44px;padding:0 22px;border:1px solid var(--line);border-radius:22px;
   background:var(--bg);color:var(--muted);font:inherit;font-size:var(--font-caption);cursor:pointer}
+
+/* 기사 상세 시트 (메인과 동일) */
+.sheet{position:fixed;inset:auto 0 0 0;margin:0 auto;width:100%;max-width:var(--maxw);border:0;padding:0;
+  border-radius:20px 20px 0 0;background:var(--bg);color:var(--fg);max-height:86dvh;
+  box-shadow:0 -6px 24px rgba(0,0,0,.16);transform:translateY(100%);
+  transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+.sheet.is-open{transform:translateY(0)}
+.sheet::backdrop{background:rgba(0,0,0,.4)}
+.sheet__inner{padding:8px 20px calc(24px + env(safe-area-inset-bottom));max-height:86dvh;
+  overflow-y:auto;overscroll-behavior:contain}
+.sheet__grip{width:36px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
+.sheet__meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.sheet__when{font-size:var(--font-caption);color:var(--muted)}
+.sheet__title{font-size:20px;font-weight:750;line-height:1.4;margin-bottom:4px;letter-spacing:-.01em}
+.sheet__orig{font-size:var(--font-caption);color:var(--muted);margin-bottom:14px;padding-bottom:14px;
+  border-bottom:1px solid var(--line)}
+.sheet__orig:empty{display:none}
+.sheet__body{font-size:var(--font-summary);line-height:1.7;white-space:pre-wrap}
+.sheet__src{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:4px}
+.sheet__src:empty{display:none}
+.sheet__src li{font-size:var(--font-caption);color:var(--muted)}
+.sheet__src li::before{content:"· ";font-weight:700}
+.sheet__cta{display:flex;align-items:center;justify-content:center;margin-top:18px;min-height:44px;
+  border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;
+  font-size:var(--font-summary)}
+.sheet__cta[hidden]{display:none}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -120,26 +151,26 @@ mark{padding:0 1px;border-radius:2px;background:color-mix(in srgb,var(--accent) 
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
            stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
     </a>
-    <div class="search-wrap">
+    <form class="search-wrap" id="searchForm" role="search" onsubmit="return false">
       <svg class="q" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
            stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="제목·요약 검색" autocomplete="off" spellcheck="false"
-             enterkeyhint="search" aria-label="검색" autofocus>
+      <input id="q" type="search" placeholder="제목·요약 검색" autocomplete="off" autocorrect="off"
+             autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="검색" autofocus>
       <button class="clear-btn" id="clear" type="button" aria-label="지우기">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
              stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
-    </div>
+    </form>
   </header>
 
   <div class="filter-bar" id="filterBar" aria-label="분야와 지역"></div>
 
   <div class="result-info" id="resultInfo" hidden>
     <span><b id="resultCount">0</b>건</span>
-    <select class="sort-select" id="sort" aria-label="정렬">
-      <option value="latest">최신순</option>
-      <option value="relevance">관련도순</option>
-    </select>
+    <div class="seg" role="group" aria-label="정렬">
+      <button type="button" data-sort="latest" aria-pressed="true">최신순</button>
+      <button type="button" data-sort="relevance" aria-pressed="false">관련도순</button>
+    </div>
   </div>
 
   <div class="recent-section" id="recentSection">
@@ -147,11 +178,26 @@ mark{padding:0 1px;border-radius:2px;background:color-mix(in srgb,var(--accent) 
     <div class="recent-list" id="recentList"></div>
   </div>
 
-  <main id="results"><div class="loading">불러오는 중…</div></main>
+  <main id="results"></main>
 </div>
 
+<dialog id="sheet" class="sheet" aria-label="기사 자세히">
+  <div class="sheet__inner">
+    <div class="sheet__grip" aria-hidden="true"></div>
+    <div class="sheet__meta">
+      <span class="sheet__beat beat"></span>
+      <span class="sheet__when"></span>
+    </div>
+    <h2 class="sheet__title"></h2>
+    <p class="sheet__orig"></p>
+    <p class="sheet__body"></p>
+    <ul class="sheet__src"></ul>
+    <a class="sheet__cta" target="_blank" rel="noopener noreferrer">기사 읽기 →</a>
+  </div>
+</dialog>
+
 <script>
-/* 같은 출처 우선, 배포 직후/실패 시 저장소 raw 폴백 */
+/* 같은 출처 우선, 실패하면 저장소 raw */
 const SOURCES = ['./feed.json',
   'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/site/feed.json'];
 const PAGE = 40;
@@ -187,26 +233,119 @@ function relTime(ts){
   return kst(ts);
 }
 const titleOf = it => it.h || it.t || '';
+function tickTimes(){
+  document.querySelectorAll('time[data-ts]').forEach(el => {
+    const v = relTime(el.dataset.ts);
+    if (el.textContent !== v) el.textContent = v;
+  });
+}
+setInterval(tickTimes, 30_000);
+
+/* ── 한국어 친화 검색 ────────────────────────────────────────────────
+   토스의 es-hangul 이 하는 일(조사 제거·초성 검색)을 필요한 만큼만 직접 구현했다.
+   ① 공백으로 토큰을 나누고 **모든 토큰이** 들어간 기사만 남긴다('이란 트럼프' → 둘 다)
+   ② 조사를 떼고 비교한다('이란은' → '이란')
+   ③ 초성만 쳐도 찾는다('ㅇㄹ' → '이란')
+   ④ 영문은 소문자로 비교한다. */
+const JOSA = ['으로서','으로써','에서는','에게서','이라고','라는','이라는','에서','에게','까지','부터',
+              '보다','처럼','이랑','한테','으로','로','을','를','이','가','은','는','의','에','와','과','도','만','랑','께'];
+const CHOSEONG = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+
+function stripJosa(tok){
+  if (tok.length <= 2) return tok;
+  for (const j of JOSA){
+    if (tok.length - j.length >= 2 && tok.endsWith(j)) return tok.slice(0, -j.length);
+  }
+  return tok;
+}
+function chosung(str){
+  let out = '';
+  for (const ch of str){
+    const c = ch.codePointAt(0);
+    if (c >= 0xAC00 && c <= 0xD7A3) out += CHOSEONG[Math.floor((c - 0xAC00) / 588)];
+    else out += ch.toLowerCase();
+  }
+  return out;
+}
+const isJamo = s => /^[ㄱ-ㅎ]+$/.test(s);
+
+function parseQuery(q){
+  return (q || '').trim().split(/\s+/).filter(Boolean)
+    .map(t => stripJosa(t.toLowerCase()))
+    .filter(Boolean)
+    .filter((t, i, a) => a.indexOf(t) === i);      // 중복 토큰 제거
+}
+
+/* 토큰 하나가 문자열에 있는지 (초성 질의 포함) */
+function hasToken(hay, hayCho, tok){
+  if (isJamo(tok)) return hayCho.includes(tok);
+  if (hay.includes(tok)) return true;
+  return false;                                    // 한글 부분 일치는 아래 countToken 에서 처리
+}
+function countToken(hay, tok){
+  if (!tok) return 0;
+  let n = 0, i = hay.indexOf(tok);
+  while (i !== -1){ n++; i = hay.indexOf(tok, i + tok.length); }
+  return n;
+}
+
+function matches(it, tokens){
+  if (!tokens.length) return true;
+  const text = (titleOf(it) + ' ' + (it.summary || '') + ' ' + (it.t || '')).toLowerCase();
+  const cho = chosung(text);
+  return tokens.every(t => hasToken(text, cho, t));
+}
+
+function relevance(it, tokens){
+  if (!tokens.length) return 0;
+  const title = titleOf(it).toLowerCase(), orig = (it.t || '').toLowerCase();
+  const sum = (it.summary || '').toLowerCase();
+  let score = 0;
+  for (const t of tokens){
+    if (isJamo(t)){                       // 초성 질의: 제목에 있으면 가점만
+      if (chosung(title).includes(t)) score += 6;
+      else if (chosung(sum).includes(t)) score += 2;
+      continue;
+    }
+    const inTitle = countToken(title, t) + countToken(orig, t);
+    const inSum = countToken(sum, t);
+    if (inTitle) score += 10 + inTitle * 2;
+    if (inSum) score += 4 + inSum;
+  }
+  return score;
+}
 
 /* ── 하이라이트 (textNode 만 조작) ─────────────────────────────── */
-function highlightInto(el, text, q){
+function highlightInto(el, text, tokens){
   el.textContent = '';
   const src = text || '';
-  if (!q){ el.textContent = src; return; }
-  const lower = src.toLowerCase(), ql = q.toLowerCase();
-  let idx = lower.indexOf(ql), last = 0;
-  if (idx === -1){ el.textContent = src; return; }
-  const frag = document.createDocumentFragment();
-  while (idx !== -1){
-    if (idx > last) frag.appendChild(document.createTextNode(src.slice(last, idx)));
-    const m = document.createElement('mark');
-    m.textContent = src.slice(idx, idx + q.length);
-    frag.appendChild(m);
-    last = idx + q.length;
-    idx = lower.indexOf(ql, last);
+  if (!tokens || !tokens.length){ el.textContent = src; return; }
+  const lower = src.toLowerCase();
+  const ranges = [];
+  for (const t of tokens){
+    if (isJamo(t)) continue;                       // 초성 질의는 위치를 되짚을 수 없다
+    let i = lower.indexOf(t);
+    while (i !== -1){ ranges.push([i, i + t.length]); i = lower.indexOf(t, i + t.length); }
   }
-  if (last < src.length) frag.appendChild(document.createTextNode(src.slice(last)));
-  el.appendChild(frag);
+  if (!ranges.length){ el.textContent = src; return; }
+  ranges.sort((a,b) => a[0] - b[0]);
+  const merged = [];
+  for (const r of ranges){
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push(r.slice());
+  }
+  const frag = document.createDocumentFragment();
+  let pos = 0;
+  for (const [a, b] of merged){
+    if (a > pos) frag.appendChild(document.createTextNode(src.slice(pos, a)));
+    const m = document.createElement('mark');
+    m.textContent = src.slice(a, b);
+    frag.appendChild(m);
+    pos = b;
+  }
+  if (pos < src.length) frag.appendChild(document.createTextNode(src.slice(pos)));
+  el.replaceChildren(frag);
 }
 
 /* ── 칩 ───────────────────────────────────────────────────────── */
@@ -214,9 +353,7 @@ function buildFilterBar(){
   const bar = $('#filterBar');
   BEATS.forEach(b => {
     const btn = document.createElement('button');
-    btn.className = 'chip';
-    btn.type = 'button';
-    btn.dataset.beat = b;
+    btn.className = 'chip'; btn.type = 'button'; btn.dataset.beat = b;
     btn.textContent = b === 'ALL' ? '전체' : BEAT[b];
     btn.setAttribute('aria-pressed', String(state.beat === b));
     bar.append(btn);
@@ -224,9 +361,7 @@ function buildFilterBar(){
   const sep = document.createElement('span'); sep.className = 'fsep'; bar.append(sep);
   REGIONS.forEach(r => {
     const btn = document.createElement('button');
-    btn.className = 'chip';
-    btn.type = 'button';
-    btn.dataset.region = r;
+    btn.className = 'chip'; btn.type = 'button'; btn.dataset.region = r;
     btn.textContent = REGION[r];
     btn.setAttribute('aria-pressed', 'false');
     bar.append(btn);
@@ -243,43 +378,32 @@ function buildFilterBar(){
       bar.querySelectorAll('[data-beat]').forEach(b =>
         b.setAttribute('aria-pressed', String(b.dataset.beat === state.beat)));
     }
-    syncHash(); runSearch();
+    syncHash(); renderResults(true);
   });
 }
 
-/* ── 필터·정렬 ─────────────────────────────────────────────────── */
-function relevance(it, q){
-  const ql = q.toLowerCase();
-  const t = titleOf(it).toLowerCase(), s = (it.summary || '').toLowerCase();
-  let score = 0;
-  if (t.includes(ql)) score += 10;
-  if (s.includes(ql)) score += 4;
-  const count = str => { let n=0,i=str.indexOf(ql); while(i!==-1){n++;i=str.indexOf(ql,i+ql.length);} return n; };
-  return score + count(t) * 2 + count(s);
-}
-
+/* ── 결과 ─────────────────────────────────────────────────────── */
 function getFiltered(){
-  const ql = state.q.toLowerCase();
+  const tokens = parseQuery(state.q);
   let list = state.items.filter(it => {
     if (state.beat !== 'ALL' && it.b !== state.beat) return false;
     if (state.regions.size && !state.regions.has(it.r)) return false;
-    if (ql && !((titleOf(it) + ' ' + (it.summary || '')).toLowerCase().includes(ql))) return false;
-    return true;
+    return matches(it, tokens);
   });
-  if (state.sort === 'relevance' && ql){
-    list = list.slice().sort((a,b) => (relevance(b, state.q) - relevance(a, state.q)) ||
-      (new Date(b.ts) - new Date(a.ts)));
+  if (state.sort === 'relevance' && tokens.length){
+    list = list.slice().sort((a,b) =>
+      (relevance(b, tokens) - relevance(a, tokens)) || (new Date(b.ts) - new Date(a.ts)));
   }
   return list;
 }
 
 const hasFilter = () => !!state.q || state.beat !== 'ALL' || state.regions.size > 0;
 
-/* ── 결과 ─────────────────────────────────────────────────────── */
 function buildCard(it){
-  const a = document.createElement(it.url ? 'a' : 'article');
-  a.className = 'card';
-  if (it.url){ a.href = it.url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+  const el = document.createElement('article');
+  el.className = 'card';
+  el.tabIndex = 0;
+  el.setAttribute('role', 'button');
 
   const top = document.createElement('div');
   top.className = 'card-top';
@@ -297,15 +421,19 @@ function buildCard(it){
 
   const title = document.createElement('h2');
   title.className = 'card-title';
-  highlightInto(title, titleOf(it), state.q);
+  highlightInto(title, titleOf(it), parseQuery(state.q));
   if (!it.h) title.lang = 'en';
 
   const body = document.createElement('p');
   body.className = 'card-body';
-  highlightInto(body, it.summary || '', state.q);
+  highlightInto(body, it.summary || '', parseQuery(state.q));
 
-  a.append(top, title, body);
-  return a;
+  el.append(top, title, body);
+  el.addEventListener('click', () => openSheet(it));   // 상세는 아래에서 올라온다
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); openSheet(it); }
+  });
+  return el;
 }
 
 function renderResults(reset){
@@ -360,13 +488,62 @@ const io = new IntersectionObserver(es => {
   }
 }, {rootMargin:'700px'});
 
-function tickTimes(){
-  document.querySelectorAll('time[data-ts]').forEach(el => {
-    const v = relTime(el.dataset.ts);
-    if (el.textContent !== v) el.textContent = v;
-  });
+/* ── 상세 시트 ─────────────────────────────────────────────────── */
+const sheet = $('#sheet');
+function openSheet(it){
+  const beatEl = $('.sheet__beat', sheet);
+  if (BEAT[it.b]){ beatEl.textContent = BEAT[it.b]; beatEl.dataset.beat = it.b; }
+  else { beatEl.textContent = ''; delete beatEl.dataset.beat; }
+  $('.sheet__when', sheet).textContent =
+    [kst(it.ts), REGION[it.r], (it.src && it.src[0])].filter(Boolean).join(' · ');
+
+  const t = $('.sheet__title', sheet);
+  t.textContent = titleOf(it);
+  if (!it.h) t.lang = 'en'; else t.removeAttribute('lang');
+  const orig = $('.sheet__orig', sheet);
+  orig.textContent = it.h && it.t ? it.t : '';
+  if (orig.textContent) orig.lang = 'en';
+  $('.sheet__body', sheet).textContent = it.summary || '';
+  $('.sheet__src', sheet).replaceChildren(...(it.src || []).map(s => {
+    const li = document.createElement('li'); li.textContent = s; return li;
+  }));
+
+  const cta = $('.sheet__cta', sheet);
+  if (it.url){ cta.href = it.url; cta.hidden = false; }
+  else { cta.removeAttribute('href'); cta.hidden = true; }
+
+  $('.sheet__inner', sheet).scrollTop = 0;
+  sheet.showModal();
+  requestAnimationFrame(() => sheet.classList.add('is-open'));
+  document.documentElement.style.overflow = 'hidden';
 }
-setInterval(tickTimes, 30_000);
+function closeSheet(){
+  sheet.classList.remove('is-open');
+  document.documentElement.style.overflow = '';
+  setTimeout(() => { if (!sheet.classList.contains('is-open')) sheet.close(); }, 280);
+}
+sheet.addEventListener('close', () => {
+  sheet.classList.remove('is-open');
+  document.documentElement.style.overflow = '';
+});
+sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+
+let y0 = 0, dy = 0, drag = false;
+sheet.addEventListener('touchstart', e => {
+  if ($('.sheet__inner', sheet).scrollTop > 0) return;
+  y0 = e.touches[0].clientY; dy = 0; drag = true; sheet.style.transition = 'none';
+}, {passive:true});
+sheet.addEventListener('touchmove', e => {
+  if (!drag) return;
+  dy = Math.max(0, e.touches[0].clientY - y0);
+  sheet.style.transform = `translateY(${dy}px)`;
+}, {passive:true});
+sheet.addEventListener('touchend', () => {
+  if (!drag) return;
+  drag = false;
+  sheet.style.transition = ''; sheet.style.transform = '';
+  if (dy > 90) closeSheet();
+});
 
 /* ── 최근 검색어 ───────────────────────────────────────────────── */
 const LS = 'webpaper-recent';
@@ -382,7 +559,7 @@ function renderRecent(){
   const list = getRecent();
   const wrap = $('#recentList');
   if (!list.length){
-    wrap.innerHTML = '<span style="color:var(--muted);font-size:13px">최근 검색어가 없어요</span>';
+    wrap.innerHTML = '<span class="recent-empty">최근 검색어가 없어요</span>';
     return;
   }
   wrap.replaceChildren(...list.map(kw => {
@@ -398,33 +575,69 @@ function renderRecent(){
       setRecent(getRecent().filter(v => v !== kw));
       renderRecent();
     });
-    b.addEventListener('click', () => { $('#q').value = kw; onQuery(kw, true); });
+    b.addEventListener('click', () => applyQuery(kw, true));
     return b;
   }));
 }
 
 /* ── 입력 ─────────────────────────────────────────────────────── */
+const qEl = $('#q'), clearBtn = $('#clear');
 let debounce = null;
-function onQuery(val, commit){
-  state.q = (val || '').trim();
-  $('#clear').classList.toggle('show', !!state.q);
-  if (commit) addRecent(state.q);
-  syncHash();
-  runSearch();
-}
-function runSearch(){ renderResults(true); }
+let composing = false;       // 한글 조합 중 Enter 를 무시한다
 
-$('#q').addEventListener('input', e => {
+function applyQuery(val, commit){
+  state.q = (val || '').trim();
+  qEl.value = state.q;                        // IME 가 덧붙인 잔여 텍스트를 정리
+  clearBtn.classList.toggle('show', !!state.q);
+  if (commit && state.q) addRecent(state.q);
+  syncHash();
+  renderResults(true);
+}
+
+qEl.addEventListener('compositionstart', () => { composing = true; });
+qEl.addEventListener('compositionend', () => {
+  composing = false;
+  clearTimeout(debounce);
+  debounce = setTimeout(() => applyQuery(qEl.value, false), 180);
+});
+qEl.addEventListener('input', e => {
+  if (e.isComposing || composing) return;
   clearTimeout(debounce);
   const v = e.target.value;
-  $('#clear').classList.toggle('show', !!v);
-  debounce = setTimeout(() => onQuery(v, false), 180);
+  clearBtn.classList.toggle('show', !!v);
+  debounce = setTimeout(() => applyQuery(v, false), 180);
 });
-$('#q').addEventListener('keydown', e => {
-  if (e.key === 'Enter'){ e.preventDefault(); clearTimeout(debounce); onQuery(e.target.value, true); e.target.blur(); }
-  if (e.key === 'Escape'){ e.target.value = ''; onQuery('', false); }
+/* 모바일 키보드 '검색' 키: form submit 과 keydown 이 겹쳐도 한 번만 처리한다.
+   state.q(직전 입력)가 새 값의 접두사면 그걸 쓴다 — IME 가 마지막 어절을 한 번 더
+   붙이는 경우('이란 트럼프트럼프')를 여기서 잘라낸다. */
+function commitFromInput(){
+  if (composing) return;
+  clearTimeout(debounce);
+  const raw = qEl.value.trim();
+  const lastTok = state.q.split(/\s+/).pop() || '';
+  // IME 가 마지막 어절을 한 번 더 붙인 경우만 잘라낸다
+  // ('이란 트럼프' + '트럼프' = '이란 트럼프트럼프'). 정상 확장('이란'→'이란 트럼프')은 그대로 둔다.
+  const v = (state.q && lastTok && raw === state.q + lastTok) ? state.q : raw;
+  applyQuery(v, true);
+  qEl.blur();
+}
+$('#searchForm').addEventListener('submit', e => { e.preventDefault(); commitFromInput(); });
+qEl.addEventListener('keydown', e => {
+  if (e.key === 'Enter'){ e.preventDefault(); commitFromInput(); }
+  if (e.key === 'Escape'){ e.preventDefault(); applyQuery('', false); qEl.blur(); }
 });
-$('#clear').addEventListener('click', () => { $('#q').value = ''; onQuery('', false); $('#q').focus(); });
+clearBtn.addEventListener('click', () => { applyQuery('', false); qEl.focus(); });
+
+/* ── 정렬 세그먼트 (네이티브 select 대신) ─────────────────────────── */
+$('.seg').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-sort]');
+  if (!btn) return;
+  state.sort = btn.dataset.sort;
+  document.querySelectorAll('.seg button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort)));
+  syncHash();
+  renderResults(true);
+});
 
 /* ── 해시 ─────────────────────────────────────────────────────── */
 function syncHash(){
@@ -446,13 +659,14 @@ function loadHash(){
     if (k === 'r') v.split(',').forEach(x => REGION[x] && state.regions.add(x));
     if (k === 's' && (v === 'latest' || v === 'relevance')) state.sort = v;
   });
-  $('#q').value = state.q;
-  $('#clear').classList.toggle('show', !!state.q);
-  $('#sort').value = state.sort;
+  qEl.value = state.q;
+  clearBtn.classList.toggle('show', !!state.q);
   document.querySelectorAll('[data-beat]').forEach(b =>
     b.setAttribute('aria-pressed', String(b.dataset.beat === state.beat)));
   document.querySelectorAll('[data-region]').forEach(b =>
     b.setAttribute('aria-pressed', String(state.regions.has(b.dataset.region))));
+  document.querySelectorAll('.seg button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort)));
 }
 
 /* ── 로드 ─────────────────────────────────────────────────────── */
@@ -478,12 +692,7 @@ async function init(){
     const d = await loadFeed();
     state.items = d.items;
     state.loading = false;
-    if (!hasFilter()){
-      $('#results').innerHTML = '';
-      $('#recentSection').style.display = '';
-    } else {
-      renderResults(true);
-    }
+    renderResults(true);
   } catch (e){
     state.loading = false;
     $('#results').innerHTML = '<div class="empty-state"><div class="empty-title">피드를 불러오지 못했어요</div>' +
