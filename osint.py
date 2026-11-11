@@ -640,7 +640,11 @@ def pick(con, cfg):
                 if r[4] not in bad]
         cand.sort(key=lambda r: -(r[7] * (0.55 + 0.45 * health.get(r[4], 0.8))))
         for r in cand[:15]:
-            reg = (r[9] if len(r) > 9 and r[9] else _b.kw_region(r[1]))   # LLM 지역 라벨 우선
+            reg = r[9] if len(r) > 9 and r[9] else None
+            kr = _b.kw_region(r[1])
+            if (not reg or reg == "GLOBAL") and kr and kr != "GLOBAL":
+                reg = kr                     # 제목에 나라 이름이 있으면 그 지역 우선
+            reg = reg or "GLOBAL"
             pool.append((_b.z_score(r[7], b, stats), b, r, reg))
     pool.sort(key=lambda x: -x[0])
 

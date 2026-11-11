@@ -334,6 +334,15 @@ def classify_pending(con, per_beat=10, max_total=60):
         lab = labels[k] if labels and labels[k] else None
         beat = (lab[0] if lab else None) or kw
         region = (lab[1] if lab else None) or kw_region(titles[k])
+        # ── LLM 보정 (2026-11-11 실측: "나이지리아 경찰청장 테러 피해 지역 병력 배치"가
+        #    OTHER/GLOBAL 로 분류돼 '국제·기타'로 나갔다) ─────────────────────
+        kr = kw_region(titles[k])
+        if region in (None, "GLOBAL") and kr and kr != "GLOBAL":
+            region = kr                      # 나라 이름이 제목에 있으면 그 지역으로
+        if beat == "OTHER":
+            kwb = kw_beat(titles[k])
+            if kwb and kwb != "OTHER":
+                beat = kwb                   # '기타'로 보냈는데 키워드가 확실하면 그쪽으로
         con.execute("UPDATE items SET beat=?, beat_src='llm', region=? WHERE id=?",
                     (beat, region, _id))
         n += 1
