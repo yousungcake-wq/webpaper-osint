@@ -85,7 +85,7 @@ main{padding:0 var(--pad)}
 .recent-chip .x{color:var(--muted);font-size:11px}
 .recent-empty{color:var(--muted);font-size:13px}
 
-.card{display:block;padding:16px;border:1px solid var(--line);border-radius:var(--radius);
+.card{display:block;min-width:0;max-width:100%;overflow:hidden;padding:16px;border:1px solid var(--line);border-radius:var(--radius);
   margin-bottom:10px;text-decoration:none;color:inherit;cursor:pointer;
   content-visibility:auto;contain-intrinsic-size:auto 130px}
 .card:hover{border-color:color-mix(in srgb,var(--fg) 16%,var(--line))}
@@ -233,6 +233,10 @@ function relTime(ts){
   return kst(ts);
 }
 const titleOf = it => it.h || it.t || '';
+const clip = (s, n = 24) => {
+  s = s || '';
+  return s.length > n ? s.slice(0, n).trimEnd() + '…' : s;
+};
 function tickTimes(){
   document.querySelectorAll('time[data-ts]').forEach(el => {
     const v = relTime(el.dataset.ts);
@@ -412,7 +416,8 @@ function buildCard(it){
   if (BEAT[it.b]){ pill.textContent = BEAT[it.b]; pill.dataset.beat = it.b; }
   const where = document.createElement('span');
   where.className = 'where';
-  where.textContent = [REGION[it.r], (it.src && it.src[0]) || ''].filter(Boolean).join(' · ');
+  where.textContent = [REGION[it.r], clip((it.src && it.src[0]) || '')].filter(Boolean).join(' · ');
+  where.title = (it.src && it.src[0]) || '';
   const tm = document.createElement('time');
   tm.dataset.ts = it.ts || '';
   tm.dateTime = it.ts || '';

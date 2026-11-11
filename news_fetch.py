@@ -22,7 +22,7 @@ UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
 PRIORITY = {
     "Reuters Biz": 3, "Reuters World": 3, "Bloomberg MKTS": 3,
     "FT Markets": 3, "FT World": 3, "AP Top": 3, "AP World": 3,
-    "TechCrunch": 3, "The Verge": 2, "Ars Technica": 2, "Wired": 2,
+    "TechCrunch": 3, "GeekNews": 4, "The Verge": 2, "Ars Technica": 2, "Wired": 2,
     "MIT TR": 2, "Register": 2, "CNBC Finance": 2, "MarketWatch": 2,
     "Politico EU": 2, "Guardian World": 1, "BBC World": 1, "AlJazeera": 1,
     "DW World": 1, "SCMP World": 1, "Nikkei Asia": 2, "Straits Times": 1,

@@ -56,3 +56,23 @@ if __name__ == "__main__":
             fn()
             print("ok", name)
     print("전부 통과")
+
+# ── 2026-11-10 👎 11건 사유 분석 → 주제 차단 규칙 ───────────────────────────
+def test_topic_block_from_dislikes():
+    # 👎 #950 잠비아 U23 축구 / #942 교회 30주년
+    assert filters.topic_block("Zambia U23 arrive in Ouagadougou for AFCON qualifier") == "sport"
+    assert filters.topic_block("Dunamis Church celebrates 30th anniversary") == "life"
+    # 👎 #769 장학금 수여 / #737 행사 확장
+    assert filters.topic_block("Airtel Africa Foundation Awards Scholarships to 10 Young Women in Niger") == "promo"
+    assert filters.topic_block("Content Americas 2027 Expands into Kids Entertainment with New Pavilion") == "promo"
+
+def test_topic_keeps_real_news():
+    for t in ("Parliament passes budget bill after marathon session",        # 'marathon' 오탐 금지
+              "Nvidia unveils new AI chip at GTC conference",                # 'conference' 오탐 금지
+              "Gaza strike kills 20 as ceasefire talks stall",
+              "Qatar PM joins G7 talks on Iran after Trump meeting"):
+        assert filters.topic_block(t) is None, t
+
+def test_korean_titles_allowed():
+    # GeekNews(한국어) — 영문 3자가 없다고 버리면 안 된다
+    assert osint.junk_item("에이전트가 글을 제대로 쓰도록 만들기", "https://news.hada.io/topic?id=1") is False

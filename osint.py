@@ -162,6 +162,10 @@ TECH_WORDS = {
     "startup": 1, "antitrust": 3, "regulation": 2, "privacy": 2, "cyber": 2,
     "quantum": 2, "robot": 2, "space": 2, "apple": 2, "microsoft": 2, "google": 2,
     "meta": 2, "amazon": 2, "tesla": 2, "ipo": 2,
+    # 한국어 소스(GeekNews)용 — 2026-11-10
+    "인공지능": 3, "반도체": 3, "오픈소스": 3, "에이전트": 2, "클라우드": 2,
+    "보안": 2, "스타트업": 2, "데이터센터": 2, "깃허브": 1, "리눅스": 1,
+    "커널": 1, "서버": 1, "프레임워크": 1,
 }
 FIN_WORDS = {
     "market": 2, "stocks": 2, "shares": 2, "yield": 3, "bond": 2, "treasury": 2,
@@ -389,7 +393,10 @@ def junk_item(title, url):
         return True
     if JUNK_TITLE.search(title):
         return True
-    if not re.search(r"[a-z]{3}", title):
+    # 한국어 소스(GeekNews)는 한글 제목이라 영문 판정에 걸린다 — 언어별로 본다
+    if not re.search(r"[a-z]{3}", title) and not re.search(r"[가-힣]{2}", title):
+        return True
+    if re.search(r"[가-힣]", title) and len(title) < 12:      # 짧은 한글 제목 허용
         return True
     if title.count("-") >= 4 and title.count(" ") <= 2:
         return True
@@ -555,6 +562,22 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         return None
     # 라운드업·오피니언·종목추천은 내용이 섞여서 요약이 사고를 낸다.
     # (2026-11-09: 금리 기사 요약에 F1 브라질 우승이 붙었다 — Rio Times Big Read)
+    # 주제 차단: 스포츠·종교/생활·홍보/의례 (2026-11-10 👎 분석)
+    tblock = flt.topic_block(title)
+    if tblock:
+        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (tblock, _id))
+        con.commit()
+        log(f"{tblock}: {title[:50]}")
+        return None
+    # 아프리카는 **분쟁만** 보도한다 (2026-11-10 지시: 쿠데타·반군 교전·분쟁)
+    import beats
+    region = (r[9] if len(r) > 9 and r[9] else None) or beats.kw_region(title)
+    beat = r[8] or ""
+    if region == "AFRICA" and beat != "CONFLICT":
+        con.execute("UPDATE items SET posted=1, note='africa_non_conflict' WHERE id=?", (_id,))
+        con.commit()
+        log(f"africa_non_conflict: {title[:50]}")
+        return None
     reason = flt.is_digest(title, url)
     if reason:
         con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (reason, _id))

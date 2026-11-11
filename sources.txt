@@ -94,3 +94,4 @@ politics|Mexico News Daily|https://mexiconewsdaily.com/feed/
 google|GN Europe2|https://news.google.com/rss/search?q=%22European%20Union%22%20OR%20Brussels%20OR%20France%20OR%20Germany%20OR%20Poland%20when:1d&hl=en-US&gl=US&ceid=US:en
 google|GN LatAm|https://news.google.com/rss/search?q=Brazil%20OR%20Mexico%20OR%20Argentina%20OR%20Chile%20election%20OR%20economy%20when:1d&hl=en-US&gl=US&ceid=US:en
 google|GN Andean|https://news.google.com/rss/search?q=Colombia%20OR%20Peru%20OR%20Venezuela%20OR%20Ecuador%20when:1d&hl=en-US&gl=US&ceid=US:en
+tech|GeekNews|https://news.hada.io/rss/news

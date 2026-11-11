@@ -51,6 +51,41 @@ STOCK_PICK = re.compile(
     r"investment ideas|buy list|market outlook|worth (buying|watching))")
 
 
+# ── 주제 차단 (2026-11-10 👎 분석) ────────────────────────────────────────
+# 👎 11건의 사유를 세어 보니 3덩어리였다.
+#   아프리카 비분쟁(4) · 스포츠/종교/생활(2: 잠비아 U23 축구, 교회 30주년)
+#   · 홍보/의례(3: 장학금 수여, 대사 학교 방문, 행사 확장)
+# 여기서는 국제 뉴스로서 정보 가치가 없는 **주제**를 먼저 걸러낸다.
+SPORT = re.compile(
+    r"(?i)\b(u-?1[5-9]|u-?2[0-3]|under-?\d{2}|national team|national squad|"
+    r"world cup|premier league|la liga|serie a|bundesliga|champions league|europa league|"
+    r"afcon|africa cup of nations|copa|nba|nfl|mlb|nhl|cricket|olympic|olympics|"
+    r"athletics|grand prix|formula one|tennis|golf|boxing|"
+    r"fifa|caf|uefa|ioc)\b")
+
+RELIGION_LIFE = re.compile(
+    r"(?i)\b(church|cathedral|pastor|bishop|diocese|congregation|ministry\b(?! of)|"
+    r"mosque|imam|rabbi|temple|anniversary|celebrates? \d+|wedding|funeral|"
+    r"beauty pageant|miss world|reality show|box office|celebrity gossi?p)\b")
+
+CSR_PROMO = re.compile(
+    r"(?i)(\b(scholarships?|donat(e|es|ed|ion)|charit\w+|foundation (awards?|grants?)|"
+    r"ribbon.?cutting|ground.?breaking)\b|"
+    r"\b(expo|exhibition|pavilion|trade show|showcase|festival)\b.{0,45}"
+    r"\b(expands?|debuts?|returns?|line.?up|edition)\b|"
+    r"\b(expands?|debuts?)\b.{0,45}\b(expo|pavilion|trade show|showcase)\b)")
+
+def topic_block(title):
+    """주제 자체가 뉴스 가치 없는 것(스포츠·종교·생활·홍보/의례)이면 이유 문자열."""
+    t = title or ""
+    if SPORT.search(t):
+        return "sport"
+    if RELIGION_LIFE.search(t):
+        return "life"
+    if CSR_PROMO.search(t):
+        return "promo"
+    return None
+
 def is_digest(title, url):
     """라운드업/오피니언/종목추천이면 이유 문자열, 아니면 None."""
     t = title or ""

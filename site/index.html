@@ -94,14 +94,16 @@ body.is-pinned .topbar{top:42px}
 .chip[aria-pressed="true"]{background:var(--beatsel);color:var(--beatsel-fg)}
 .chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-#feed{max-width:var(--maxw);margin:0 auto;padding:8px 20px 0;display:grid;gap:var(--gap)}
+#feed{max-width:var(--maxw);margin:0 auto;padding:8px 20px 0;display:grid;gap:var(--gap);
+  grid-template-columns:minmax(0,1fr)}
 @media (min-width:900px){
   :root{--maxw:940px}
-  #feed{grid-template-columns:1fr 1fr;align-items:start}
+  #feed{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
   #feed .more,#feed .empty{grid-column:1 / -1}
 }
 
-.card{display:block;padding:16px;border:1px solid var(--line);border-radius:var(--radius);background:var(--bg);
+.card{display:block;min-width:0;max-width:100%;overflow:hidden;padding:16px;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--bg);
   cursor:pointer;transition:background .12s,border-color .12s;-webkit-tap-highlight-color:transparent;
   content-visibility:auto;contain-intrinsic-size:auto 132px}
 .card:hover{border-color:color-mix(in srgb,var(--fg) 16%,var(--line))}
@@ -263,6 +265,11 @@ const state = {
 };
 
 const titleOf = it => it.h || it.t || '';
+/* 출처가 길면 카드 폭이 터진다 — 일정 길이에서 자른다 (프랑스 부처명 같은 것) */
+const clip = (s, n = 24) => {
+  s = s || '';
+  return s.length > n ? s.slice(0, n).trimEnd() + '…' : s;
+};
 const keyOf = it => (it.ts || '') + '|' + titleOf(it);
 
 /* ── 테마 ───────────────────────────────────────────────────────── */
@@ -339,7 +346,8 @@ function cardNode(it){
 
   const where = document.createElement('span');
   where.className = 'card__where';
-  where.textContent = [REGION[it.r], (it.src && it.src[0]) || ''].filter(Boolean).join(' · ');
+  where.textContent = [REGION[it.r], clip((it.src && it.src[0]) || '')].filter(Boolean).join(' · ');
+  where.title = (it.src && it.src[0]) || '';
 
   const timeEl = document.createElement('time');
   timeEl.className = 'card__time';
@@ -587,7 +595,21 @@ function breakingItems(){
     const w = it.b === 'CONFLICT' ? 1.15 : it.b === 'ECONOMY' ? 1.05 : 1;
     return { it, k: imp * (0.45 + 0.55 * recency) * w };
   }).sort((a, b) => b.k - a.k);
-  return scored.slice(0, 8).map(x => x.it).sort((a, b) => new Date(b.ts) - new Date(a.ts));
+  // 제목이 비슷한 항목(같은 사건의 다른 각도)은 하나만 — 반복 느낌 제거
+  const toks = t => new Set((t || '').toLowerCase().split(/[^\w가-힣]+/).filter(w => w.length > 1));
+  const jac = (a, b) => {
+    let inter = 0;
+    for (const w of a) if (b.has(w)) inter++;
+    return inter / (a.size + b.size - inter || 1);
+  };
+  const picked = [];
+  for (const { it } of scored){
+    if (picked.length >= 8) break;
+    const t = toks(titleOf(it));
+    if (picked.some(p => jac(t, toks(titleOf(p))) > 0.5)) continue;
+    picked.push(it);
+  }
+  return picked;                      // 가중치 높은 순서 그대로 나열
 }
 
 function buildTicker(){
