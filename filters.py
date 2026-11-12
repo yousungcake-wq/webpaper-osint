@@ -60,7 +60,7 @@ SPORT = re.compile(
     r"(?i)\b(u-?1[5-9]|u-?2[0-3]|under-?\d{2}|national team|national squad|"
     r"world cup|premier league|la liga|serie a|bundesliga|champions league|europa league|"
     r"afcon|africa cup of nations|copa|nba|nfl|mlb|nhl|cricket|olympic|olympics|"
-    r"athletics|grand prix|formula one|tennis|golf|boxing|"
+    r"athletics|grand prix|formula one|motor racing|nascar|indycar|motogp|rally|tennis|golf|boxing|"
     r"fifa|caf|uefa|ioc)\b")
 
 RELIGION_LIFE = re.compile(
