@@ -582,8 +582,9 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         return None
     # 아프리카는 **분쟁만** 보도한다 (2026-11-10 지시: 쿠데타·반군 교전·분쟁)
     import beats
+    # 주의: run_once.install_loose_pick 은 8컬럼(id..score)만 넘긴다 — 인덱싱은 방어적으로
+    beat = r[8] if len(r) > 8 else ""
     region = (r[9] if len(r) > 9 and r[9] else None) or beats.kw_region(title)
-    beat = r[8] or ""
     if region == "AFRICA" and beat != "CONFLICT":
         con.execute("UPDATE items SET posted=1, note='africa_non_conflict' WHERE id=?", (_id,))
         con.commit()

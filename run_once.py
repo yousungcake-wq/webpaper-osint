@@ -208,10 +208,11 @@ def install_loose_pick():
             con.commit()
             return (r[0], r[1], r[2], real) + tuple(r[4:8])
 
+
         # 3차: 최근 게시가 적은 비트부터
         counts = beats.beat_counts(con, window=12)
         for b in sorted(beats.BEATS, key=lambda x: counts.get(x, 0)):
-            cands = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score FROM items
+            cands = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
                     WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8""", (b,)).fetchall()
             for r in cands:
                 if not usable(r):
@@ -222,7 +223,7 @@ def install_loose_pick():
                     return got
 
         # 4차: 점수 상위
-        for r in con.execute("""SELECT id,title,descr,url,feed,cat,ts,score FROM items
+        for r in con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
                 WHERE posted=0 ORDER BY score DESC LIMIT 40""").fetchall():
             if not usable(r):
                 continue
