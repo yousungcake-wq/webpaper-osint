@@ -462,6 +462,12 @@ def cycle():
         print(f"[DRY RUN] 게시 예정: {got.get('title', '')[:70]}")
     else:
         print("이번 회차 게시 없음")
+    # 이번 회차에 무엇이 걸렸는지 한 줄로 남긴다(Actions 로그에서 게이트가 도는지 보이게).
+    gs = con.execute("""SELECT note, COUNT(*) FROM items
+        WHERE note LIKE 'form%' OR note IN ('dup','digest','opinion','sport','life','promo',
+              'stockpick','africa_non_conflict','africa_feed_non_conflict','expired','noise')
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 8""").fetchall()
+    print("  gate: " + (" ".join(f"{n}={c}" for n, c in gs) if gs else "없음"))
     print(f"  이력 {n_state}건 · 분류 {n_beat} · {time.time() - t0:.0f}s")
     return got
 
