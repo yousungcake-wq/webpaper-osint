@@ -46,6 +46,11 @@ OPINION_TITLE = re.compile(
     r"^(why|what|how)\s.+\?$")
 
 # 종목 추천·시황 전망 (투자 광고)
+# 오피니언·에세이 (2026-11-12: "A Rothbardian Critique of US Intervention" 가 NEWS 로 통과했다)
+ESSAY = re.compile(
+    r"(?i)(\bop-?ed\b|\bcommentary\b|\bcritique\b|\bessay\b|\bcolumn\b|"
+    r"\bviewpoint\b|\bperspective\b|\bthe big picture\b|\bpodcast\b|\btranscript\b)")
+
 STOCK_PICK = re.compile(
     r"(?i)(stock picks?|stocks to buy|top picks?|best stocks|"
     r"investment ideas|buy list|market outlook|worth (buying|watching))")
@@ -122,6 +127,8 @@ def is_digest(title, url):
         return "opinion"
     if STOCK_PICK.search(t):
         return "stockpick"
+    if ESSAY.search(t):
+        return "opinion"
     if OPINION_TITLE.search(t) and len(t) < 220:
         return "opinion"
     return None

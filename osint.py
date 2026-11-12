@@ -646,6 +646,11 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         con.commit()
         log(f"{reason}: {title[:50]}")
         return None
+    dup_of = next((t for t in recent if similar(title, t) > 0.45 or same_event(title, t, df)), None)
+    if dup_of:
+        con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (_id,))
+        log(f"dup: {title[:46]} ≒ {dup_of[:46]}")   # 과잉 차단 추적용 (2026-11-08)
+        return None
     # 형식 게이트 (2026-11-12) — 이 파이프라인의 주 게이트다.
     # 👎 11건의 사유는 소재가 아니라 형식(일상 시황·보도자료·상황보고·전망·지방 정치)이었다.
     # 비트 분류는 '무엇에 관한가'만 보므로 형식을 통과시킨다 → 분류 콜에서 같이 받아 여기서 버린다.
@@ -656,7 +661,7 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     # 판정이 비어 있으면(주기 배치가 아직 안 돌았거나 429) **이 한 건만** 분류한다.
     # 프롬프트가 짧아(~130토큰) 회차당 2건까지만 허용한다 — 배치가 하루 한도를
     # 넘긴 전례(2026-11-12) 때문. 실패하면 아래 시황 백스톱으로 넘어간다.
-    if form is None and _ONESHOT[0] < 1:
+    if form is None and _ONESHOT[0] < 2:
         _ONESHOT[0] += 1
         try:
             lab = _bs.classify_one(title)
@@ -688,11 +693,6 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
             return None
     except Exception:
         pass
-    dup_of = next((t for t in recent if similar(title, t) > 0.45 or same_event(title, t, df)), None)
-    if dup_of:
-        con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (_id,))
-        log(f"dup: {title[:46]} ≒ {dup_of[:46]}")   # 과잉 차단 추적용 (2026-11-08)
-        return None
     return url        # 실제 기사 URL (구글뉴스 링크면 해석된 주소)
 
 
