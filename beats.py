@@ -31,10 +31,18 @@ TARGET = {"TECH": 2, "ECONOMY": 2, "CONFLICT": 2, "POLITICS": 1, "OTHER": 1}  # 
 FORMS = ("NEWS", "MARKET", "PROMO", "FORECAST", "LOCAL", "REPORT", "LIFE")
 FORM_KO = {"NEWS": "사건", "MARKET": "시황", "PROMO": "홍보", "FORECAST": "전망",
            "LOCAL": "지방", "REPORT": "상황보고", "LIFE": "생활"}
-FORM_MIN_UTILITY = 4          # 형식이 NEWS 가 아니면 이 점수 미만은 버린다
+# 형식별 유용도 하한 — 형식마다 '통과할 만한 이유'가 다르다.
+# 값은 2026-11-12 실측(게시 211건 재판정)으로 골랐다: 차단 29%, 이 유형이 실제로
+# 비취향이던 것 51/81 포착, 손실은 11건(그중 실제 손실은 2건 — 나머지는 IPO 밸류에이션·
+# 오피니언으로 사용자가 싫어한 유형). MARKET 8 은 '사실상 항상 버림'이다 —
+# 진짜 시장 사건은 모델이 NEWS 로 태깅한다. LOCAL 3·REPORT 3 은 낮게 뒀다:
+# 높이면 이스라엘 의회·콩고 국민투표·ISW 전황보고 같은 실제 뉴스가 함께 죽는다.
+FORM_MIN = {"NEWS": 2, "MARKET": 8, "PROMO": 6, "FORECAST": 5, "LOCAL": 3,
+            "REPORT": 3, "LIFE": 5}
+FORM_MIN_UTILITY = 4          # 형식 미상일 때 쓰는 기본값(하위 호환)
 
 
-def drop_form(form, util, min_utility=FORM_MIN_UTILITY):
+def drop_form(form, util, min_utility=None):
     """형식 판정으로 버릴 기사인가 (2026-11-12).
 
     유용도를 못 받았으면(구형 3필드 응답·LLM 실패) 판단하지 않는다 — 그때는
@@ -47,9 +55,10 @@ def drop_form(form, util, min_utility=FORM_MIN_UTILITY):
     except (TypeError, ValueError):
         return False
     f = (form or "NEWS").upper()
-    if f != "NEWS":
-        return u < min_utility
-    return u <= 1
+    if f not in FORM_MIN:
+        f = "NEWS"
+    thr = FORM_MIN[f] if min_utility is None else min_utility
+    return u < thr
 
 # 소스 카테고리·예전 상태값을 새 비트로 흡수한다.
 LEGACY = {"FINANCE": "ECONOMY", "COMMODITY": "ECONOMY", "MARKETS": "ECONOMY"}
@@ -236,16 +245,21 @@ PROMPT = """다음 뉴스 제목을 분류해라. 설명 없이 "번호:비트:�
 - MARKET: 일상적 시세·지수 등락·개별 종목 등락·종목 추천·"stock market today"·시황 중계·수익률 표.
 - PROMO: 보도자료 — 행사 개최/확장, 수상, MOU, 기념식, 기관 홍보, 신제품 광고.
 - FORECAST: 사건 없이 전망·예측·"~할 수 있다"·"~할까?"·애널리스트 의견만 있는 글.
-- LOCAL: 한 나라 안의 지방 정치·의례·연설·선거 운동·지역 행사 (국제 정치가 아닌 것).
+- LOCAL: 한 나라 **안에서만** 통하는 정치·선거·인사·의례·연설·지역 행사.
+  국제적 파급이 뚜렷하지 않은 내수 정치 기사는 규모와 무관하게 LOCAL 이다.
+  (예: 나이지리아 상원의원 경선, 미국 카운티 선거, 지방정부 발표)
 - REPORT: 인도지원 상황보고·통계 보고서·"Update #12"·주간 집계.
 - LIFE: 종교·연예·스포츠·생활·문화.
 
 유용도 0-10 — 이 기사를 읽고 국제 정세를 이해하는 데 얼마나 쓸모가 있는가.
 - 9-10 체계적: 다자 관계·시장·안보 구도를 바꾸는 사건
 - 7-8 중요: 한 나라나 산업에 뚜렷한 영향을 주는 사건
-- 5-6 참고: 구체적 사실이 있으나 파급이 제한적
-- 3-4 낮음: 일상적 등락, 예상된 결과, 근거 약한 전망, 지역 행사
+- 5-6 참고: 구체적 사실이 있고 여러 사람이 알아야 할 사건
+- 3-4 낮음: 일상적 등락, 예상된 결과, 근거 약한 전망, 지역 행사,
+  **한 나라 안에서만 통하는 정치·행정·인사**
 - 0-2 소음: 홍보, 소문, 선정적 예측, 통계 나열
+**형식이 MARKET·PROMO·REPORT·LIFE 이면 유용도는 3 이하로 준다** (단, 시장 붕괴·금리 결정·
+제재처럼 사건이면 NEWS 다). 형식을 먼저 정하고 유용도는 그 형식 안에서 매긴다.
 
 {titles}"""
 
@@ -258,12 +272,37 @@ def _post(url, payload, headers, timeout=30):   # 5분 주기 안에 끝나야 �
         return json.loads(r.read().decode())
 
 
+GEMINI_CLASSIFY_MODELS = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite",
+                          "gemini-3-flash-preview"]
+
+
 def _call_text(prompt, max_tokens=2000, timeout=20):
     """분류용 LLM 1회 호출 — Groq → Gemini → NVIDIA. 실패하면 "".
 
     무료 한도가 좁다(Groq 200k 토큰/일). 그래서 호출부가 주기를 조절하고,
     같은 기사를 두 번 분류하지 않도록 run_once 가 판정을 state 에 남긴다.
     """
+    # Gemini 를 먼저 쓴다. 분류는 **요청 수** 기준 한도인 flash-lite 계열이 남아 있고,
+    # Groq 의 하루 토큰(200k)은 기사 요약이 거의 다 먹는다(2026-11-12 실측:
+    # 분류가 429로 죽어 형식 게이트가 통째로 꺼졌다). 무료 한도는 모델마다 따로 센다.
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if key:
+        for model in GEMINI_CLASSIFY_MODELS:
+            try:
+                r = _post("https://generativelanguage.googleapis.com/v1beta/models/"
+                          f"{model}:generateContent?key=" + key,
+                          {"contents": [{"parts": [{"text": prompt}]}],
+                           "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens}},
+                          {}, timeout=timeout)
+                out = ((r.get("candidates") or [{}])[0].get("content", {})
+                       .get("parts") or [{}])[0].get("text", "").strip()
+                if out:
+                    return out
+            except Exception as e:
+                msg = str(e)
+                if "429" not in msg and "404" not in msg:
+                    print(f"[beats] gemini/{model} {type(e).__name__}: {msg[:80]}", flush=True)
+
     key = os.environ.get("GROQ_API_KEY", "").strip()
     if key:
         try:
@@ -277,20 +316,6 @@ def _call_text(prompt, max_tokens=2000, timeout=20):
                 return out
         except Exception as e:
             print(f"[beats] groq {type(e).__name__}: {str(e)[:100]}", flush=True)
-
-    key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if key:
-        try:
-            r = _post("https://generativelanguage.googleapis.com/v1beta/models/"
-                      "gemini-3-flash-preview:generateContent?key=" + key,
-                      {"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens}},
-                      {}, timeout=timeout)
-            out = ((r.get("candidates") or [{}])[0].get("content", {}).get("parts") or [{}])[0].get("text", "").strip()
-            if out:
-                return out
-        except Exception as e:
-            print(f"[beats] gemini {type(e).__name__}: {str(e)[:100]}", flush=True)
 
     # 3) NVIDIA NIM — Gemini/Groq 가 동시에 429/503 인 날이 잦다(2026-11-10 실측).
     try:
@@ -318,7 +343,8 @@ ONE_PROMPT = """제목 하나를 분류해라. "비트:지역:형식:유용도" 
 지역: EUROPE LATAM US ASIA AFRICA MIDDLE_EAST GLOBAL
 형식: NEWS(사건·결정·조치) MARKET(일상 시세·지수·종목 등락) PROMO(보도자료·행사·수상)
      FORECAST(사건 없이 전망만) LOCAL(지방 정치·의례·연설) REPORT(상황보고·통계) LIFE(종교·연예·스포츠·생활)
-유용도 0-10: 9-10 체계적 변화 / 7-8 중요 / 5-6 참고 / 3-4 일상 등락·예상된 결과·약한 전망 / 0-2 홍보·소문
+유용도 0-10: 9-10 체계적 변화 / 7-8 중요 / 5-6 참고 / 3-4 일상 등락 / 0-2 홍보·소문
+MARKET·PROMO·REPORT·LIFE 형식이면 유용도 3 이하. (시장 붕괴·금리 결정·제재 같은 사건은 NEWS)
 제목: {title}"""
 
 
@@ -327,7 +353,8 @@ def classify_one(title):
     out = _call_text(ONE_PROMPT.format(title=(title or "")[:130]), max_tokens=24, timeout=12)
     if not out:
         return None
-    labs = _parse(out, 1)
+    # 모델은 "ECONOMY:US:MARKET:2" 처럼 번호 없이 답한다 — 파서는 번호를 요구한다.
+    labs = _parse("1:" + out.strip().splitlines()[0], 1)
     return labs[0] if labs else None
 
 

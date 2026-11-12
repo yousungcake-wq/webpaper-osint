@@ -47,9 +47,16 @@ check("parse_drops_garbage_line", beats._parse("1: ???", 1), None)
 
 # ── 2. 형식 판정 규칙 ─────────────────────────────────────────────────
 check("gate_market_low", beats.drop_form("MARKET", 2), True)
-check("gate_market_mid", beats.drop_form("MARKET", 5), False)   # 애매하면 남긴다
+check("gate_market_low_mid", beats.drop_form("MARKET", 5), True)   # 일상 시황은 유용도가 높아도 버린다
+check("gate_market_big", beats.drop_form("MARKET", 8), False)      # 모델이 큰 사건으로 본 경우만 통과
+check("gate_local_low", beats.drop_form("LOCAL", 2), True)
+check("gate_local_mid", beats.drop_form("LOCAL", 4), False)
+check("gate_local_verylow", beats.drop_form("LOCAL", 2), True)
+check("gate_forecast_mid", beats.drop_form("FORECAST", 6), False)
+check("gate_forecast_low", beats.drop_form("FORECAST", 4), True)
 check("gate_promo_low", beats.drop_form("PROMO", 1), True)
-check("gate_report_low", beats.drop_form("REPORT", 3), True)
+check("gate_report_low", beats.drop_form("REPORT", 2), True)
+check("gate_report_high", beats.drop_form("REPORT", 7), False)
 check("gate_news_ok", beats.drop_form("NEWS", 6), False)
 check("gate_news_noise", beats.drop_form("NEWS", 1), True)
 check("gate_form_missing", beats.drop_form(None, 2), False)     # 형식 미상 → 판단 보류
