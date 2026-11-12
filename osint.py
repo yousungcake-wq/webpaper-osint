@@ -773,13 +773,12 @@ def pick(con, cfg):
     for b, rows in by_beat.items():
         rows.sort(key=lambda x: (-(rdef.get(x[3], 0) > 0),
                                  -(x[0] - story_penalty(heat, x[2][1]))))
-        best[b] = rows[0]
+        best[b] = rows[:4]           # 1등이 막히면(만료·중복·형식) 다음 후보로 넘어간다
     for b, _deficit in _b.beat_deficits(con):
-        if b not in best:
-            continue
-        z, _b2, r, reg = best[b]
-        real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
-        if real:
+        for z, _b2, r, reg in best.get(b, []):
+            real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
+            if not real:
+                continue
             con.execute("UPDATE items SET beat=? WHERE id=? AND COALESCE(beat,'')=''",
                         (b, r[0]))
             con.commit()
