@@ -137,7 +137,9 @@ Pages 는 **배포할 때 CDN 캐시를 비우므로** 게시 → 커밋 → 배
 
 - **Pages 소스를 `main` 브랜치(branch 빌드)로 바꾸지 말 것.** 지금은 `build_type=workflow`.
   branch 빌드는 시간당 10회 한도의 적용을 받고, Actions 배포는 받지 않는다.
-- **`site/feed.json` 은 생성물이다.** 손으로 고치면 다음 회차에 덮인다.
+- **`site/feed*.json` 은 생성물이고 저장소에 커밋하지 않는다**(2026-11-12 변경).
+  배포 잡이 체크아웃 직후 `python3 feedgen.py` 로 state 에서 만들고 그대로 Pages 에 올린다.
+  커밋하던 시절에는 5분마다 500KB 를 다시 쓰고, 생성물이라 rebase 충돌이 났다.
   로컬에서 여러 번 커밋하면 이 파일만 rebase 충돌이 난다 → `feedgen.py` 재실행으로 해결.
 - **`run_once.commit_state()` 의 `git add state site`** 를 `site` 없이 되돌리면
   사이트가 갱신되지 않는다(배포 트리거가 사라진다).

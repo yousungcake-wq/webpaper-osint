@@ -6,7 +6,7 @@ exp_judge.py 는 내가 손으로 쓴 루브릭이었다. 이건 **실제로 배
 """
 import json, glob, sys
 
-sys.path.insert(0, '/var/minis/workspace/wp-audit')
+sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.dirname(__import__('os').path.abspath(__file__))))
 import beats
 
 rows = []
