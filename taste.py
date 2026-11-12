@@ -53,7 +53,9 @@ AXES = {
                 r"keynote|conference|press release)\b",
     "원자재·에너지": r"(?i)\b(oil|gas|lng|refin\w*|opec|brent|wti|crude|gold|copper|"
                     r"mining|mine)\b",
-    "나이지리아": r"(?i)(nigeri\w*|naira|tinubu|atiku|abuja|lagos|dangote)",
+    # 2026-11-11: 지역 축은 지운다. 아프리카 비분쟁 차단은 osint._candidate_ok 의
+    # 하드 규칙(africa_non_conflict)이 맡는다. 취향 축으로 두면 나이지리아 '분쟁' 기사까지
+    # 같이 밀려서 사용자가 원하는 것을 막게 된다.
 }
 COMPILED = {k: re.compile(v) for k, v in AXES.items()}
 

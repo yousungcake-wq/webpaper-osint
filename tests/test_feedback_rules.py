@@ -46,8 +46,13 @@ def test_taste_prefers_event_news():
 def test_taste_block_needs_two_axes():
     # 한 축만 걸린 글은 차단되지 않는다
     assert taste.blocked("France vows tough response to cyberattack blamed on Iran") is False
-    # 내수 정치 + 행사 홍보가 겹치면 차단
-    assert taste.blocked("Nigeria summit: Dangote unveils refinery pavilion at Lagos expo") is True
+    # 2026-11-11 지역 축을 뺀 뒤로는 두 축(-2.2)만으로는 차단되지 않는다(임계 -2.5).
+    # 세 축(행사 홍보 + 원자재 + 예측)이 겹치면 차단된다.
+    assert taste.blocked("Gulf summit: refinery pavilion unveiled at energy expo") is False
+    assert taste.blocked("Energy expo outlook: refinery pavilion to open") is True
+    # 2026-11-11: 지역 축(나이지리아)은 하드 규칙으로 옮겼다 — 아프리카 '분쟁'은 밀리면 안 된다
+    assert taste.adj("Nigeria police deployed after Boko Haram attack", "") > 0
+    assert taste.adj("Nigeria 2027: if Atiku is knocked out, who gains?", "") < 0
 
 
 if __name__ == "__main__":

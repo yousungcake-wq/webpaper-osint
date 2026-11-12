@@ -538,6 +538,17 @@ def feed_health(con, ttl=900):
     return d
 
 
+# 아프리카 전담 매체 (2026-11-11). 지역 분류가 GLOBAL/ASIA 로 틀려도
+# 이 매체의 비분쟁 기사는 아프리카 소식이므로 막는다.
+AFRICA_FEEDS = {
+    "Africa Report", "AllAfrica", "Premium Times", "Sudan Tribune", "HumAngle",
+    "African Arguments", "M&G Africa", "Sudan War Monitor", "Radio Dabanga",
+    "Sahel Intelligence", "FTL Somalia", "Dawan Africa", "Voice of Nigeria",
+    "GBC Ghana Online", "TechAfrica News", "Billionaires.Africa", "Africa.com",
+    "ZamFoot", "GN Sudan", "GN Sahel", "GN Congo", "GN Horn", "GN AfricaWar",
+    "GN SudanTrib",
+}
+
 def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     """후보 검증(구글뉴스 해석·정크·만료·중복).
 
@@ -577,6 +588,12 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         con.execute("UPDATE items SET posted=1, note='africa_non_conflict' WHERE id=?", (_id,))
         con.commit()
         log(f"africa_non_conflict: {title[:50]}")
+        return None
+    # 지역 라벨이 틀린 경우(나이지리아 기사가 ASIA/US 로 분류)를 매체로 잡는다
+    if feed in AFRICA_FEEDS and beat != "CONFLICT":
+        con.execute("UPDATE items SET posted=1, note='africa_feed_non_conflict' WHERE id=?", (_id,))
+        con.commit()
+        log(f"africa_feed_non_conflict: {title[:50]}")
         return None
     reason = flt.is_digest(title, url)
     if reason:

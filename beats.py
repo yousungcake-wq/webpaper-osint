@@ -337,7 +337,9 @@ def classify_pending(con, per_beat=10, max_total=60):
         # ── LLM 보정 (2026-11-11 실측: "나이지리아 경찰청장 테러 피해 지역 병력 배치"가
         #    OTHER/GLOBAL 로 분류돼 '국제·기타'로 나갔다) ─────────────────────
         kr = kw_region(titles[k])
-        if region in (None, "GLOBAL") and kr and kr != "GLOBAL":
+        if kr == "AFRICA":
+            region = "AFRICA"                # 아프리카 국가명은 확실한 신호 (2026-11-11)
+        elif region in (None, "GLOBAL") and kr and kr != "GLOBAL":
             region = kr                      # 나라 이름이 제목에 있으면 그 지역으로
         if beat == "OTHER":
             kwb = kw_beat(titles[k])
