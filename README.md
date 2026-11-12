@@ -78,8 +78,8 @@ VPS 로 옮기는 게 맞다.
 - `writer.py` — 본문 추출(JSON-LD·문단), 구글뉴스 URL 해석, 해요체 변환
 - `news_fetch.py` — RSS/Atom 파서
 - `sources.txt` — 96개 소스 (`분류|이름|URL`)
-- `feedgen.py` — `state/posts` → `site/feed.json` (사이트용, 최근 5일·최대 300건)
+- `feedgen.py` — `state/posts` → `site/feed.json` + `feed-pN.json` (사이트용, 최근 5일을 300건 단위 쪽으로)
 - `backfill_head.py` — 예전 게시물에 한국어 제목 채우기(1회성)
 - `site/index.html` — 웹사이트 (HTML·CSS·JS 한 파일, 검색·필터 포함)
-- `site/feed.json` — 사이트 데이터(생성물)
+- `site/feed.json`·`site/feed-p*.json` — 사이트 데이터(생성물, 0쪽=최신 300건)
 - `docs/SITE.md` — 사이트 구조·무료 한도·한계

@@ -402,8 +402,8 @@ def commit_state():
     try:
         try:                                  # 사이트 피드(site/feed.json)도 같이 커밋한다
             import feedgen
-            data, dropped = feedgen.write()
-            print(f"feed: {data['count']}건 (버림 {dropped})")
+            data, written = feedgen.write()
+            print(f"feed: {data['count']}건 · {data['pages']}쪽 (전체 {data['total']}건)")
         except Exception as e:                # 피드 생성 실패가 게시를 막지는 않는다
             print("feedgen 오류:", e)
         _git(["git", "add", "state", "site"])

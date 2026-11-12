@@ -12,7 +12,7 @@
 :root{
   --bg:#fff; --fg:#191919; --muted:#6b6b6b; --line:#ececec; --chip:#f2f4f6;
   --accent:#3182f6; --beatsel:#191919; --beatsel-fg:#fff;
-  --t-tech:#3182f6; --t-economy:#0e9f6e; --t-conflict:#e02424; --t-politics:#4b5563; --t-other:#8b95a1;
+  --t-tech:#3182f6; --t-economy:#0e9f6e; --t-conflict:#e02424; --t-politics:#7c3aed; --t-other:#8b95a1;
   --font-base:16px; --font-summary:15px; --font-caption:13px;
   --lh:1.6; --radius:16px; --maxw:640px; --safe-b:env(safe-area-inset-bottom,0px);
   --pad:16px; --back-w:40px; --hdr-gap:10px;
@@ -20,13 +20,13 @@
 :root[data-theme="dark"]{
   --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
   --accent:#4f9bff; --beatsel:#f0f1f3; --beatsel-fg:#101114;
-  --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#9aa5b4; --t-other:#7d8794;
+  --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#a78bfa; --t-other:#7d8794;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
     --accent:#4f9bff; --beatsel:#f0f1f3; --beatsel-fg:#101114;
-    --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#9aa5b4; --t-other:#7d8794;
+    --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#a78bfa; --t-other:#7d8794;
   }
 }
 *{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
@@ -198,8 +198,8 @@ mark{padding:0 1px;border-radius:2px;background:color-mix(in srgb,var(--accent) 
 
 <script>
 /* 같은 출처 우선, 실패하면 저장소 raw */
-const SOURCES = ['./feed.json',
-  'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/site/feed.json'];
+const BASES = ['./',
+  'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/site/'];
 const PAGE = 40;
 
 const BEAT = { TECH:'테크', ECONOMY:'경제', CONFLICT:'분쟁', POLITICS:'정치', OTHER:'기타' };
@@ -676,12 +676,15 @@ function loadHash(){
     b.setAttribute('aria-pressed', String(b.dataset.sort === state.sort)));
 }
 
-/* ── 로드 ─────────────────────────────────────────────────────── */
-async function loadFeed(){
+/* ── 로드 ───────────────────────────────────────────────────────
+   기사는 300건씩 쪽으로 나뉜다(feed.json → feed-p1.json …).
+   검색은 '지금 보는 화면'이 아니라 전체를 훑어야 하므로 쪽을 모두 받아 합친다
+   (0쪽만 받으면 최신 300건 안에서만 검색된다). */
+async function loadFeed(p = 0){
   let err;
-  for (const u of SOURCES){
+  for (const base of BASES){
     try {
-      const r = await fetch(u, {cache:'no-store'});
+      const r = await fetch(base + (p ? 'feed-p' + p + '.json' : 'feed.json'), {cache:'no-store'});
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       if (!Array.isArray(d.items)) throw new Error('bad payload');
@@ -696,8 +699,14 @@ async function init(){
   renderRecent();
   loadHash();
   try {
-    const d = await loadFeed();
-    state.items = d.items;
+    const d = await loadFeed(0);
+    let items = d.items;
+    const pages = Math.min(d.pages || 1, 8);      // 폭주 방지 상한
+    for (let p = 1; p < pages; p++){
+      try { items = items.concat((await loadFeed(p)).items); }
+      catch (e){ break; }                          // 한 쪽 실패해도 나머지로 검색
+    }
+    state.items = items;
     state.loading = false;
     renderResults(true);
   } catch (e){

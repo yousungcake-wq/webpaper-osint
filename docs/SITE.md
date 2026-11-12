@@ -1,7 +1,7 @@
 # WebPaper 사이트 — 정적 피드로 운영하기
 
 > 사이트: <https://yousungcake-wq.github.io/webpaper-osint/>
-> 코드: `site/index.html`(한 파일) · `site/feed.json`(생성물) · `feedgen.py`(생성기)
+> 코드: `site/index.html` · `site/search.html` · `site/feed.json`+`site/feed-p*.json`(생성물) · `feedgen.py`(생성기)
 > 만든 날 2026-11-10. 텔레그램 보도 파이프라인은 그대로 두고 **출력 하나를 더 붙였다.**
 
 ---
@@ -14,14 +14,14 @@ cron-job.org (5분)
           ├─ 수집 → 분류 → 선택 → LLM(제목+요약)
           ├─ 텔레그램 채널 게시              ← 출력 1
           ├─ state/posts/<날짜>/*.jsonl     ← 게시 1건 = 파일 1개
-          ├─ feedgen.py → site/feed.json    ← 출력 2(사이트 데이터)
+          ├─ feedgen.py → site/feed.json+feed-pN.json ← 출력 2(사이트 데이터)
           └─ git commit & push (state + site)
                     │
                     ▼  같은 워크플로 안에서 이어서
           job: deploy → Pages 배포(≈30초)   ※ site.yml 은 사람이 site/ 를 고칠 때만
                     │
                     ▼
-   site/index.html (정적 1장) ── fetch ./feed.json (같은 출처)
+   site/index.html ── fetch ./feed.json → 아래로 내려가면 ./feed-pN.json
 ```
 
 **핵심: 데이터를 사이트와 같이 배포한다.** 처음엔 데이터만 따로 raw 로 빼려 했지만
@@ -69,29 +69,34 @@ Pages 는 **배포할 때 CDN 캐시를 비우므로** 게시 → 커밋 → 배
 
 ---
 
-## 3. 데이터 계약 (`site/feed.json`)
+## 3. 데이터 계약 (`site/feed.json` + `site/feed-pN.json`)
 
 ```json
-{ "generated_at": "2026-11-10T10:42:55Z", "count": 243, "days": 5,
+{ "generated_at": "2026-11-10T10:42:55Z", "count": 300,
+  "page": 0, "pages": 2, "total": 547, "days": 5,
   "items": [
     { "h": "카타르, 호르무즈 긴장 속 LNG 선적량 확대",   // 한국어 제목(없으면 "")
       "t": "Qatar LNG Loadings Gain Pace",              // 원문제목(폴백·상세화면 표기)
       "summary": "카타르가 … 늘리며 …",                  // 텔레그램에 쓴 그 요약
       "url": "https://…", "src": ["Rigzone"],
-      "b": "COMMODITY", "r": "MIDDLE_EAST",
+      "b": "ECONOMY", "r": "MIDDLE_EAST", "s": 18.4,
       "ts": "2026-11-10T09:41:00Z" } ] }
 ```
 
-- 최근 **5일**, 최대 **300건**. 넘으면 오래된 것부터 버린다.
+- 최근 **5일 전체**를 **300건 단위 쪽**으로 나눠 쓴다.
+  `feed.json`=0쪽(첫 화면이 받는 최신 300건), `feed-p1.json`=그다음 300건, …
+  사이트는 아래로 내려갈 때 다음 쪽을 그때 받는다. 쪽 수가 줄면 옛 `feed-pN.json` 은 지운다.
+  - 2026-11-12 이전에는 한 파일 300건 상한이었다 → 하루 180~220건 게시라 **300건이 1.5일치**뿐,
+    11-11 07:36 이 "마지막 기사"처럼 보였다(텔레그램에는 더 있는데). 지금은 5일 창 끝까지 내려간다.
 - `b`(비트) 5종: **TECH·ECONOMY·CONFLICT·POLITICS·OTHER(기타)**.
   - 2026-11-10 통합: 금융(FINANCE)·원자재(COMMODITY) → ECONOMY.
   - **OTHER = "명확히 분류되지 않는 국제 뉴스"**(정상회의·외교 접촉·인물 동향·국제기구). 쓰레기 통이 아니다.
   - **POLITICS 는 좁게**: 선거·의회·정당·내각. 외교 일정은 POLITICS 가 아니라 OTHER.
   - OTHER 도 **게시한다**(예전엔 후보에서 잘라내 '기타'가 영원히 비어 있었다). 목표비 10건 중 2건.
+  - 배지 색: 테크 파랑 · 경제 초록 · 분쟁 빨강 · **정치 보라** · 기타 회색(2026-11-12, 정치/기타 구분).
 - `r`(지역) 7종: US·LATAM·EUROPE·ASIA·MIDDLE_EAST·AFRICA·GLOBAL / 모르면 `GLOBAL`
-- 점수(`s`)와 원시 시각은 **일부러 뺐다**. 화면에 안 쓰는 값을 5분마다 커밋하면
-  저장소만 무거워진다(현재 243건 ≈ 170KB).
-- `feedgen.write()` 는 `.tmp` 에 쓰고 `os.replace` 로 교체한다(중간 상태 없음).
+- `s`(중요도)는 속보 티커 정렬에만 쓴다. 원시 시각은 **일부러 뺐다**(`ts` 로 대체).
+- `feedgen.write()` 는 쪽마다 `.tmp` 에 쓰고 `os.replace` 로 교체한다(중간 상태 없음).
 
 ---
 

@@ -42,7 +42,7 @@ def main():
     ])
     write(tmp, old, "010101-old.jsonl", [row(k="old", cu="x/9")])   # 기간 밖 → 버림
 
-    data, dropped = feedgen.build(days=5)
+    data = feedgen.build(days=5)
     items = data["items"]
     keys = [i["t"] for i in items]
 
@@ -59,20 +59,31 @@ def main():
     assert all(i["ts"].endswith("Z") for i in items), "ts 가 ISO 가 아니다"
     assert all(i["h"] == "" or len(i["h"]) <= 80 for i in items)
 
-    # 상한
+    # 쪽 나누기: 350건 → 2쪽(300 + 50). 0쪽은 최신 300건.
     big = [row(k=f"k{i}", cu=f"x/{i}") for i in range(350)]
     tmp2 = tempfile.mkdtemp()
     feedgen.POSTS = tmp2
     write(tmp2, today, "010101-big.jsonl", big)
-    data2, dropped2 = feedgen.build(days=5, max_items=300)
-    assert len(data2["items"]) == 300 and dropped2 == 50, (len(data2["items"]), dropped2)
+    outdir = tempfile.mkdtemp()
+    out = os.path.join(outdir, "feed.json")
+    first, written = feedgen.write(out)
+    assert len(written) == 2, written
+    assert first["pages"] == 2 and first["total"] == 350, (first["pages"], first["total"])
+    assert first["count"] == 300 and len(first["items"]) == 300
+    p1 = json.load(open(written[1], encoding="utf-8"))
+    assert p1["page"] == 1 and len(p1["items"]) == 50, (p1["page"], len(p1["items"]))
+    # 쪽이 줄면 남은 feed-pN.json 을 지운다(유령 쪽 방지)
+    feedgen.POSTS = tmp
+    first2, written2 = feedgen.write(out)
+    assert len(written2) == 1 and not os.path.exists(os.path.join(outdir, "feed-p1.json")), \
+        "쪽 수가 줄었는데 옛 feed-p1.json 이 남았다"
 
     # 빈 상태에서도 예외가 나지 않아야 한다 (첫 배포 직후)
     feedgen.POSTS = tempfile.mkdtemp()
-    data3, _ = feedgen.build()
-    assert data3["count"] == 0 and data3["items"] == []
+    data3 = feedgen.build()
+    assert data3["count"] == 0 and data3["items"] == [] and data3["pages"] == 1
 
-    print("feedgen: 9 checks ok")
+    print("feedgen: 13 checks ok")
 
 if __name__ == "__main__":
     main()

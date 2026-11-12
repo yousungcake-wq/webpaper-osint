@@ -18,20 +18,20 @@
 :root{
   --bg:#fff; --fg:#191919; --muted:#6b6b6b; --line:#ececec; --chip:#f2f4f6;
   --accent:#3182f6; --beatsel:#191919; --beatsel-fg:#fff;
-  --t-tech:#3182f6; --t-economy:#0e9f6e; --t-conflict:#e02424; --t-politics:#4b5563; --t-other:#8b95a1;
+  --t-tech:#3182f6; --t-economy:#0e9f6e; --t-conflict:#e02424; --t-politics:#7c3aed; --t-other:#8b95a1;
   --font-base:16px; --font-summary:15px; --font-caption:13px;
   --lh:1.6; --tap:44px; --gap:14px; --radius:16px; --maxw:640px;
 }
 :root[data-theme="dark"]{
   --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
   --accent:#4f9bff; --beatsel:#f0f1f3; --beatsel-fg:#101114;
-  --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#9aa5b4; --t-other:#7d8794;
+  --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#a78bfa; --t-other:#7d8794;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
     --accent:#4f9bff; --beatsel:#f0f1f3; --beatsel-fg:#101114;
-    --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#9aa5b4; --t-other:#7d8794;
+    --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#a78bfa; --t-other:#7d8794;
   }
 }
 *{box-sizing:border-box}
@@ -244,11 +244,14 @@ body.is-pinned .topbar{top:42px}
 <script>
 /* ── 데이터 ──────────────────────────────────────────────────────────
    feed.json 은 사이트와 함께 배포된다(같은 출처). 게시 → 커밋 → 같은 워크플로의
-   deploy 잡이 Pages 로 배포하고(≈30초) Pages 는 배포 때 CDN 캐시를 비운다. */
-const FEED_SOURCES = [
-  './feed.json',
-  'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/site/feed.json'
+   deploy 잡이 Pages 로 배포하고(≈30초) Pages 는 배포 때 CDN 캐시를 비운다.
+   기사는 300건씩 쪽을 나눈다(feed.json → feed-p1.json → …). 첫 화면은 0쪽만 받고,
+   아래로 내려가면 이전 쪽을 그때 받아 붙인다 — 5일치를 한 번에 받지 않는다. */
+const FEED_BASES = [
+  './',
+  'https://raw.githubusercontent.com/yousungcake-wq/webpaper-osint/main/site/'
 ];
+const pageUrl = (base, p) => base + (p ? 'feed-p' + p + '.json' : 'feed.json');
 const POLL_MS = 60_000;
 const POLL_FAST_MS = 20_000;
 const PAGE = 40;
@@ -260,8 +263,8 @@ const $ = (s, r=document) => r.querySelector(s);
 const feedEl = $('#feed'), badge = $('#newBadge'), badgeN = $('#badgeN'), sheet = $('#sheet');
 
 const state = {
-  items: [], beat: 'ALL', shown: 0, list: [],
-  seen: new Set(), loading: true
+  recent: [], older: [], items: [], beat: 'ALL', shown: 0, list: [],
+  seen: new Set(), loading: true, page: 0, pages: 1, total: 0, fetching: false
 };
 
 const titleOf = it => it.h || it.t || '';
@@ -271,6 +274,18 @@ const clip = (s, n = 24) => {
   return s.length > n ? s.slice(0, n).trimEnd() + '…' : s;
 };
 const keyOf = it => (it.ts || '') + '|' + titleOf(it);
+
+/* 0쪽(최신 300건) + 이전 쪽들을 최신순으로 합친다 — 겹치는 항목은 0쪽이 이긴다.
+   폴링이 0쪽만 새로 받아도 이미 받아 둔 이전 쪽을 잃지 않게 하는 장치. */
+function remix(){
+  const seen = new Set(), out = [];
+  for (const it of state.recent.concat(state.older)){
+    const k = keyOf(it);
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(it);
+  }
+  state.items = out;
+}
 
 /* ── 테마 ───────────────────────────────────────────────────────── */
 const themeBtn = $('#theme');
@@ -404,6 +419,7 @@ function render(reset){
       ? '<p class="empty"><strong>이 분야 기사가 아직 없어요</strong>다른 분야를 눌러 보세요.</p>'
       : '<p class="empty"><strong>아직 보도된 기사가 없어요</strong>5분마다 자동으로 확인해요.</p>';
     state.shown = 0;
+    state.moreEl = null;
     return;
   }
 
@@ -413,29 +429,61 @@ function render(reset){
   const frag = list.slice(from, next).map(cardNode);
 
   if (reset) feedEl.replaceChildren(...frag);
-  else {
-    $('#feed .more')?.remove();
-    feedEl.append(...frag);
-  }
+  else feedEl.append(...frag);
   state.shown = next;
 
-  document.querySelector('#feed .more')?.remove();
-  if (state.shown < list.length){
-    const more = document.createElement('div');
-    more.className = 'more';
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = `더 보기 (${list.length - state.shown}건)`;
-    b.addEventListener('click', () => render(false));
-    more.append(b);
-    feedEl.append(more);
-    io.observe(more);
-  }
+  paintMore();
+}
+
+/* 더 보기 = ①아직 안 붙인 카드가 있으면 붙이고 ②없으면 이전 쪽을 받는다 */
+function paintMore(){
+  if (state.moreEl){ io.unobserve(state.moreEl); state.moreEl = null; }
+  feedEl.querySelector('.more')?.remove();
+  const left = state.list.length - state.shown;
+  const morePages = state.page + 1 < state.pages;
+  if (!left && !morePages) return;
+  const more = document.createElement('div');
+  more.className = 'more';
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.textContent = left
+    ? `더 보기 (${left}건)`
+    : `이전 기사 더 보기 (${Math.max(0, (state.total || state.items.length) - state.items.length)}건)`;
+  b.addEventListener('click', loadMore);
+  more.append(b);
+  feedEl.append(more);
+  state.moreEl = more;
+  io.observe(more);
+}
+
+function moreLabel(msg){
+  const b = feedEl.querySelector('.more button');
+  if (b) b.textContent = msg;
+}
+
+async function loadMore(){
+  if (state.fetching || state.loading) return;
+  if (state.shown < state.list.length){ render(false); return; }   // 받아 둔 카드부터
+  if (state.page + 1 >= state.pages) return;                       // 더 없음
+  state.fetching = true;
+  moreLabel('불러오는 중…');
+  try {
+    const d = await fetchPage(state.page + 1);
+    state.older = state.older.concat(d.items);
+    state.page += 1;
+    state.pages = d.pages || state.pages;
+    state.total = d.total || state.total;
+    remix();
+    render(false);
+  } catch (e){
+    if (state.moreEl) io.unobserve(state.moreEl);   // 자동 재시도로 요청을 반복하지 않는다
+    moreLabel('이전 기사 불러오기 실패 — 눌러서 다시 시도');
+  } finally { state.fetching = false; }
 }
 
 const io = new IntersectionObserver(es => {
   for (const e of es){
-    if (e.isIntersecting && !state.loading && state.shown < state.list.length) render(false);
+    if (e.isIntersecting && !state.loading && !state.fetching) loadMore();
   }
 }, {rootMargin:'700px'});
 
@@ -519,11 +567,11 @@ badge.addEventListener('click', () => {
 });
 
 /* ── 불러오기 ───────────────────────────────────────────────────── */
-async function load(){
+async function fetchPage(p){
   let err;
-  for (const u of FEED_SOURCES){
+  for (const base of FEED_BASES){
     try {
-      const r = await fetch(u, {cache:'no-store'});
+      const r = await fetch(pageUrl(base, p), {cache:'no-store'});
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const d = await r.json();
       if (!Array.isArray(d.items)) throw new Error('bad payload');
@@ -541,21 +589,28 @@ function schedule(ms){
 
 async function poll(first){
   try {
-    const d = await load();
+    const d = await fetchPage(0);
     const next = d.items;
     const fresh = first ? [] : next.filter(it => !state.seen.has(keyOf(it)));
-    state.items = next;
-    state.seen = new Set(next.map(keyOf));
+    if (first) state.older = [];                  // 새로 연 화면 — 이전 쪽은 처음부터
+    state.recent = next;
+    state.pages = d.pages || 1;
+    state.total = d.total || next.length;
+    state.seen = new Set(next.concat(state.older).map(keyOf));
+    remix();
     state.loading = false;
 
     const atTop = window.scrollY < 80;
-    if (first || atTop || !fresh.length){
-      render(true);
-      badge.hidden = true;               // 새 글이 이미 화면에 있으면 배지는 띄우지 않는다
-    } else {
+    if (first || atTop){
+      render(true);                               // 맨 위에 있을 때만 다시 그린다
+      badge.hidden = true;
+    } else if (fresh.length){
       const visible = fresh.filter(it => state.beat === 'ALL' || it.b === state.beat);
       if (visible.length){ badgeN.textContent = visible.length; badge.hidden = false; }
     }
+    /* 새 글이 없고 아래를 보고 있으면 DOM 을 건드리지 않는다.
+       예전엔 여기서 render(true) 를 불렀는데, 그게 40건으로 되감아
+       읽던 자리를 잃고 기사가 '순간이동'하던 원인이었다. */
     buildTicker();
     tickTimes();
     const ageMin = d.generated_at ? (Date.now() - new Date(d.generated_at)) / 60000 : 0;
