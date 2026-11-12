@@ -32,7 +32,7 @@ jobs:
     outputs:
       changed: ${{ steps.head.outputs.changed }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -90,7 +90,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       # ref: main 필수 — 기본값은 이벤트 시점의 SHA 라서 방금 커밋된 피드를 놓친다(실측 11:00).
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
       - name: 사이트 데이터 생성 (state → site/feed*.json)
