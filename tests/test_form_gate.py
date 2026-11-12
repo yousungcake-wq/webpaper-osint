@@ -91,19 +91,25 @@ NEUTRAL = "G7 foreign ministers say China actions east of Taiwan threaten stabil
 con.execute("UPDATE items SET title=? WHERE id=1", (NEUTRAL,))
 check("allow_legacy_no_util", gate(None, None, NEUTRAL), "https://example.com/a")
 
-# ── 3-1. 판정이 비었을 때 단건 분류가 게이트를 살리는가 ──────────────
+# ── 3-1. 게시 직전 마지막 게이트(form_gate_item) ─────────────────────
 con.execute("UPDATE items SET title=?, posted=0, note=NULL, form=NULL, util=NULL WHERE id=1",
             (TITLE,))
 beats.classify_one = lambda title: ("ECONOMY", "US", "MARKET", 1)
-osint._ONESHOT[0] = 0
-check("oneshot_blocks", gate(None, None), None)
-check("oneshot_note", con.execute("SELECT note FROM items WHERE id=1").fetchone()[0],
+check("last_gate_blocks", osint.form_gate_item(con, 1, TITLE), False)
+check("last_gate_note", con.execute("SELECT note FROM items WHERE id=1").fetchone()[0],
       "form:MARKET")
-check("oneshot_persisted", con.execute("SELECT form, util FROM items WHERE id=1").fetchone(),
-      ("MARKET", 1))
-beats.classify_one = lambda title: None
-osint._ONESHOT[0] = 0
+beats.classify_one = lambda title: ("ECONOMY", "US", "NEWS", 8)
 con.execute("UPDATE items SET posted=0, note=NULL, form=NULL, util=NULL WHERE id=1")
+check("last_gate_allows", osint.form_gate_item(con, 1, TITLE), True)
+beats.classify_one = lambda title: None
+con.execute("UPDATE items SET posted=0, note=NULL, form=NULL, util=NULL WHERE id=1")
+check("last_gate_rule_backstop", osint.form_gate_item(con, 1, TITLE), False)
+check("last_gate_rule_note", con.execute("SELECT note FROM items WHERE id=1").fetchone()[0],
+      "form:MARKET(rule)")
+beats.classify_one = lambda title: None
+con.execute("UPDATE items SET posted=0, note=NULL, form=NULL, util=NULL, title=? WHERE id=1",
+            ("G7 foreign ministers say China actions east of Taiwan threaten stability",))
+check("last_gate_passes_unknown", osint.form_gate_item(con, 1, "G7 foreign ministers say"), True)
 
 # ── 4. 사건 예산 ─────────────────────────────────────────────────────
 heat = {"nvidia": 5, "iran": 1}

@@ -590,9 +590,6 @@ def story_penalty(heat, title, cap=ENTITY_CAP, pen=ENTITY_PEN):
     return 0.0
 
 
-_ONESHOT = [0]      # 회차(프로세스)당 단건 분류 호출 수 — 한도 보호(최대 1)
-
-
 def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     """후보 검증(구글뉴스 해석·정크·만료·중복).
 
@@ -658,21 +655,6 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     import beats as _bs
     form = r[10] if len(r) > 10 else None
     util = r[11] if len(r) > 11 else None
-    # 판정이 비어 있으면(주기 배치가 아직 안 돌았거나 429) **이 한 건만** 분류한다.
-    # 프롬프트가 짧아(~130토큰) 회차당 2건까지만 허용한다 — 배치가 하루 한도를
-    # 넘긴 전례(2026-11-12) 때문. 실패하면 아래 시황 백스톱으로 넘어간다.
-    if form is None and _ONESHOT[0] < 2:
-        _ONESHOT[0] += 1
-        try:
-            lab = _bs.classify_one(title)
-        except Exception:
-            lab = None
-        if lab:
-            form, util = lab[2], lab[3]
-            con.execute("""UPDATE items SET beat=?, beat_src='llm', region=?, form=?, util=?
-                           WHERE id=?""",
-                        (lab[0] or (r[8] if len(r) > 8 else ""),
-                         lab[1] or (r[9] if len(r) > 9 else ""), form, util, _id))
     if _bs.drop_form(form, util):
         con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", _id))
         con.commit()
@@ -694,6 +676,41 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     except Exception:
         pass
     return url        # 실제 기사 URL (구글뉴스 링크면 해석된 주소)
+
+
+def form_gate_item(con, item_id, title, descr=""):
+    """게시 직전 마지막 형식 게이트 (2026-11-12).
+
+    왜 pick 이 아니라 여기인가: pick 은 회차마다 후보를 30~40건 훑는다. 그때마다
+    분류를 부르면 토큰이 남지 않고, 반대로 배치 판정만 믿으면 배치 사이에 들어온
+    기사가 판정 없이 나간다(실측: 04:55 호주 실종 소년 기사). 그래서
+    **실제로 내보낼 1건**만 여기서 분류한다. 한 건 ≈ 200토큰 × 8건/시간.
+    """
+    import beats as _bs
+    row = con.execute("SELECT form, util FROM items WHERE id=?", (item_id,)).fetchone() or (None, None)
+    form, util = row
+    if form is None:
+        lab = None
+        try:
+            lab = _bs.classify_one(title)
+        except Exception:
+            lab = None
+        if lab:
+            form, util = lab[2], lab[3]
+            con.execute("""UPDATE items SET beat=?, beat_src='llm', region=?, form=?, util=?
+                           WHERE id=?""", (lab[0] or "", lab[1] or "", form, util, item_id))
+            con.commit()
+    if _bs.drop_form(form, util):
+        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", item_id))
+        con.commit()
+        log(f"form: {form} util={util} {title[:50]}")
+        return False
+    if form is None and flt.market_wrap(title):
+        con.execute("UPDATE items SET posted=1, note='form:MARKET(rule)' WHERE id=?", (item_id,))
+        con.commit()
+        log(f"form(rule): MARKET {title[:50]}")
+        return False
+    return True
 
 
 def pick(con, cfg):
@@ -1274,6 +1291,10 @@ def _llm_publish_locked(con, cfg, llm):
         dpath = f"{QUEUE}/{d['id']}.json" if d else None
     if not d:
         log("publish: 후보 없음(모두 필터됨)")
+        return None
+    # 마지막 형식 게이트 — 요약(비싼 콜) 전에, 실제로 내보낼 1건만 판정한다.
+    if not form_gate_item(con, d["id"], d["title"]):
+        log("publish: 형식 게이트에서 차단")
         return None
     head, body = llm.summarize_parts(d["title"], d["text"], thin=bool(d.get("thin")))
     d["headline"] = head or ""                       # 사이트 제목(텔레그램 본문엔 안 쓴다)
