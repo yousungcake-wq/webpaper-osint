@@ -42,7 +42,8 @@ SCHEMA = [
         key TEXT UNIQUE, title TEXT, descr TEXT, url TEXT,
         feed TEXT, cat TEXT, ts TEXT, first_seen TEXT,
         score REAL, posted INTEGER DEFAULT 0, posted_at TEXT, note TEXT,
-        beat TEXT, beat_src TEXT, region TEXT, cu TEXT, summary TEXT)""",
+        beat TEXT, beat_src TEXT, region TEXT, cu TEXT, summary TEXT,
+        form TEXT, util INTEGER)""",
     "CREATE TABLE tr(key TEXT PRIMARY KEY, ko TEXT)",
     "CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT)",
     "CREATE TABLE gnurl(gn TEXT PRIMARY KEY, real TEXT, at TEXT)",
@@ -115,12 +116,13 @@ def load_state(con):
     for d in keep:
         con.execute(
             """INSERT OR IGNORE INTO items(key,title,descr,url,feed,cat,ts,first_seen,
-                score,posted,posted_at,note,beat,beat_src,region,cu,summary)
-               VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)""",
+                score,posted,posted_at,note,beat,beat_src,region,cu,summary,form,util)
+               VALUES(?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)""",
             (d.get("k", ""), d.get("t", ""), "", d.get("u", ""), d.get("f", ""), d.get("c", ""),
              "", d.get("a", ""), d.get("s", 0), d.get("a", ""), d.get("n"),
              beats.norm_beat(d.get("b", "")), "state", d.get("r", ""),
-             d.get("cu") or filters.canon_url(d.get("u", "")), d.get("x", "")))
+             d.get("cu") or filters.canon_url(d.get("u", "")), d.get("x", ""),
+             d.get("fm") or None, d.get("ut")))
     con.commit()
     return len(keep)
 
@@ -131,8 +133,8 @@ def append_state(d, con, row_id):
     state/posts/<날짜>/<시각>-<키>.jsonl — 회차가 겹쳐도 같은 파일을 건드리지 않는다.
     요약문(x)과 정규화 주소(cu)도 같이 남긴다. 다음 회차의 중복 판정 재료다.
     """
-    r = con.execute("SELECT beat, region, key, cat, summary, cu FROM items WHERE id=?",
-                    (row_id,)).fetchone() or ("", "", "", "", "", "")
+    r = con.execute("SELECT beat, region, key, cat, summary, cu, form, util FROM items"
+                    " WHERE id=?", (row_id,)).fetchone() or ("", "", "", "", "", "", None, None)
     beat = r[0] or beats.kw_beat(d.get("title", ""), d.get("cat", ""))
     region = r[1] or beats.kw_region(d.get("title", ""))
     now = osint.now_utc()
@@ -142,6 +144,7 @@ def append_state(d, con, row_id):
            "f": (d.get("feed") or "")[:40], "c": r[3] or d.get("cat", ""),
            "b": beat, "r": region, "s": d.get("score", 0),
            "x": (r[4] or "")[:1200],
+           "fm": r[6] or "", "ut": r[7],
            "h": (d.get("headline") or "")[:80],          # 사이트용 한국어 제목
            "m": getattr(osint, "LAST_MSG_ID", 0),      # 반응(👎/👍) 매칭용
            "a": now.strftime("%Y-%m-%d %H:%M UTC")}
@@ -166,6 +169,131 @@ def shard_sources():
 
     osint.nf.load_sources = load
     return idx
+
+
+FORMS_DIR = os.path.join(STATE_DIR, "forms")        # 기사 key → 비트·지역·형식·유용도
+FORMS_KEEP_H = 48
+
+# 왜 판정을 저장하나: 회차는 매번 새 프로세스라 items 테이블이 다시 만들어진다.
+# 그래서 5분마다 같은 기사를 60건씩 **처음부터 다시 분류**했고, 그 콜이 Groq 무료
+# 하루 한도(200k 토큰)를 3~4배 초과해 하루 종일 429로 떨어졌다
+# (2026-11-12 실측: used 198,246 / limit 200,000). 한 기사는 한 번만 분류한다.
+#
+# 왜 파일 하나가 아니라 회차마다 새 파일인가: 하나의 JSONL 을 계속 고쳐 쓰면
+# 커밋마다 파일 전체가 새 blob 이 되어 히스토리가 하루 수십 MB 로 분다
+# (state/posts 를 건당 파일로 쪼갠 것과 같은 이유).
+
+
+def _form_files():
+    if not os.path.isdir(FORMS_DIR):
+        return []
+    out = []
+    for d in sorted(os.listdir(FORMS_DIR)):
+        sub = os.path.join(FORMS_DIR, d)
+        if not os.path.isdir(sub):
+            continue
+        out += [os.path.join(sub, fn) for fn in sorted(os.listdir(sub))
+                if fn.endswith(".jsonl")]
+    return out
+
+
+BULK_EVERY_MIN = int(os.environ.get("BULK_EVERY_MIN", "60") or 60)
+BULK_MARK = os.path.join(FORMS_DIR, "last_bulk.txt")
+
+
+def _bulk_due():
+    """비트·지역 배치를 지금 돌릴 때인가. 실패한 회차는 다음 회차에 다시 시도한다."""
+    try:
+        with open(BULK_MARK, encoding="utf-8") as f:
+            last = dt.datetime.strptime(f.read().strip(), "%Y-%m-%d %H:%M UTC")
+        last = last.replace(tzinfo=dt.timezone.utc)
+    except Exception:
+        return True
+    age = (dt.datetime.now(dt.timezone.utc) - last).total_seconds() / 60
+    return age >= BULK_EVERY_MIN
+
+
+def _mark_bulk():
+    os.makedirs(FORMS_DIR, exist_ok=True)
+    with open(BULK_MARK, "w", encoding="utf-8") as f:
+        f.write(dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+
+
+def load_forms():
+    """지난 회차 분류 판정을 읽는다(key → 레코드)."""
+    out = {}
+    for path in _form_files():
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if d.get("k"):
+                    out[d["k"]] = d
+    return out
+
+
+def _prune_forms(now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    cutoff = (now - dt.timedelta(hours=FORMS_KEEP_H)).strftime("%Y-%m-%d")
+    if not os.path.isdir(FORMS_DIR):
+        return
+    for d in sorted(os.listdir(FORMS_DIR)):
+        if d >= cutoff:
+            continue
+        sub = os.path.join(FORMS_DIR, d)
+        if not os.path.isdir(sub):
+            continue
+        for fn in os.listdir(sub):
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(sub, fn))
+        with contextlib.suppress(OSError):
+            os.rmdir(sub)
+
+
+def apply_forms(con):
+    """캐시된 판정을 이번 회차 items 에 앉힌다."""
+    forms = load_forms()
+    _prune_forms()
+    n = 0
+    for k, d in forms.items():
+        cur = con.execute("SELECT 1 FROM items WHERE key=?", (k,)).fetchone()
+        if not cur:
+            continue
+        con.execute("""UPDATE items SET beat=?, beat_src='llm', region=?, form=?, util=?
+                       WHERE key=?""",
+                    (d.get("b") or "", d.get("r") or "", d.get("fm") or None,
+                     d.get("ut"), k))
+        n += 1
+    con.commit()
+    return n
+
+
+def save_forms(con):
+    """이번 회차에 새로 분류한 것만 **새 파일**로 남긴다(덮어쓰지 않는다)."""
+    forms = load_forms()
+    now = dt.datetime.now(dt.timezone.utc)
+    rows = []
+    for k, b, r, fm, ut in con.execute(
+            """SELECT key, beat, region, form, util FROM items
+               WHERE beat_src='llm' AND key IS NOT NULL AND key != ''"""):
+        if k in forms:
+            continue
+        rows.append({"k": k, "b": b or "", "r": r or "", "fm": fm or "", "ut": ut})
+    if not rows or DRY:
+        return 0
+    sub = os.path.join(FORMS_DIR, now.strftime("%Y-%m-%d"))
+    os.makedirs(sub, exist_ok=True)
+    path = os.path.join(sub, f"{now.strftime('%H%M%S')}-{len(rows)}.jsonl")
+    with open(path, "w", encoding="utf-8") as f:
+        for d in rows:
+            f.write(json.dumps(d, ensure_ascii=False) + "\n")
+    print(f"forms: +{len(rows)} → {os.path.relpath(path, STATE_DIR)}")
+    return len(rows)
 
 
 def install_loose_pick():
@@ -199,6 +327,13 @@ def install_loose_pick():
                     or osint.LOW_VALUE_ANY.search(title) or osint.COURTESY.search(title)
                     or osint.NOISE_TITLE.search(title)):
                 return False
+            # 2026-11-12 '빈 슬롯 허용': 안전망은 **품질이 확실할 때만** 채운다.
+            # 형식이 뉴스가 아니면 유용도 5 이상(본선 기준 4보다 높다)이어야 하고,
+            # 유용도를 모르면 그냥 통과시킨다(정규식 백스톱이 잡는다).
+            util = r[11] if len(r) > 11 else None
+            form = (r[10] if len(r) > 10 else None) or "NEWS"
+            if util is not None and form != "NEWS" and util < 5:
+                return False
             return True
 
         def take(r):
@@ -210,10 +345,14 @@ def install_loose_pick():
 
 
         # 3차: 최근 게시가 적은 비트부터
+        heat = osint.story_heat(con)
         counts = beats.beat_counts(con, window=12)
         for b in sorted(beats.BEATS, key=lambda x: counts.get(x, 0)):
-            cands = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
-                    WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8""", (b,)).fetchall()
+            cands = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util
+                    FROM items WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8""",
+                                (b,)).fetchall()
+            # 같은 이야기가 하루 상한을 넘었으면 뒤로 미룬다(사건 예산, 2026-11-12)
+            cands.sort(key=lambda r: -((r[7] or 0) - osint.story_penalty(heat, r[1])))
             for r in cands:
                 if not usable(r):
                     continue
@@ -223,13 +362,15 @@ def install_loose_pick():
                     return got
 
         # 4차: 점수 상위
-        for r in con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
-                WHERE posted=0 ORDER BY score DESC LIMIT 40""").fetchall():
+        rows = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util
+                FROM items WHERE posted=0 ORDER BY score DESC LIMIT 40""").fetchall()
+        rows.sort(key=lambda r: -((r[7] or 0) - osint.story_penalty(heat, r[1])))
+        for r in rows:
             if not usable(r):
                 continue
             got = take(r)
             if got:
-                print(f"pick(4차·점수): {r[7]:.1f} {r[1][:50]}")
+                print(f"pick(4차·점수): {r[7]:.1f} form={r[10]} util={r[11]} {r[1][:50]}")
                 return got
         con.commit()
         return None
@@ -299,8 +440,16 @@ def cycle():
     for e in errors[:3]:
         print("  err:", e)
 
-    n_beat = beats.classify_pending(con)
+    apply_forms(con)                 # 지난 회차에 분류한 판정을 되살린다
+    n_beat = 0
+    if _bulk_due():                  # 비트·지역 배치는 시간당 1회 (토큰 한도)
+        n_beat, n_llm = beats.classify_pending(con)
+        if n_llm:
+            _mark_bulk()
+    save_forms(con)
     got = osint.llm_publish(con, cfg)
+    if not DRY:
+        save_forms(con)              # pick 안에서 단건 분류한 것까지 저장
     if got and not DRY:
         append_state(got, con, got.get("id"))
         commit_state()

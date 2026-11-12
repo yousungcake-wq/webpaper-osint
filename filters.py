@@ -60,7 +60,9 @@ SPORT = re.compile(
     r"(?i)\b(u-?1[5-9]|u-?2[0-3]|under-?\d{2}|national team|national squad|"
     r"world cup|premier league|la liga|serie a|bundesliga|champions league|europa league|"
     r"afcon|africa cup of nations|copa|nba|nfl|mlb|nhl|cricket|olympic|olympics|"
-    r"athletics|grand prix|formula one|motor racing|nascar|indycar|motogp|rally|tennis|golf|boxing|"
+    r"athletics|grand prix|formula one|motor racing|nascar|indycar|motogp|"
+    r"wrc|rally championship|rallycross|"      # 2026-11-12: 맨 'rally' 는 stocks rally·정치 집회를 잡는다
+    r"tennis|golf|boxing|"
     r"fifa|caf|uefa|ioc)\b")
 
 RELIGION_LIFE = re.compile(
@@ -74,6 +76,30 @@ CSR_PROMO = re.compile(
     r"\b(expo|exhibition|pavilion|trade show|showcase|festival)\b.{0,45}"
     r"\b(expands?|debuts?|returns?|line.?up|edition)\b|"
     r"\b(expands?|debuts?)\b.{0,45}\b(expo|pavilion|trade show|showcase)\b)")
+
+# ── 일상 시황 백스톱 (2026-11-12) ──────────────────────────────────────
+# 형식 판정은 분류 LLM 콜에 실려 있다. 그 콜이 429/503 이면 form 이 비어 게이트가
+# 꺼지는데, 무료 키는 하루에도 몇 번씩 그렇게 된다. 그때만 쓰는 **좁고 정확한** 규칙이다.
+# 2026-11-12 실측(게시 212건): 17/17 정밀도(오탐 0), 재현율 63%.
+# 평상시 경로가 아니다 — form 이 채워져 있으면 이 함수는 호출되지 않는다.
+_MKT_VERB = (r"(rise|rises|rising|fall|falls|falling|drop|drops|gain|gains|climb|climbs|"
+             r"slip|slips|jump|jumps|sink|sinks|rebound|rebounds|tumble|tumbles|extend|"
+             r"extends|poised|set to|surge|surges|slide|slides|dip|dips|rally|rallies|"
+             r"retreat|retreats|regain|regains|pick up|picks up|whipsaw|edge|edges|"
+             r"mixed|flat|low|high|record)")
+MARKET_WRAP = re.compile(
+    r"(?ix)(stock\ market\ today|market\ (wrap|report|today)|earnings\ call|key\ facts|"
+    r"(stocks?|shares?|index|futures|nasdaq|s&p|dow|yields?|bonds?|dollar|sterling|yen|"
+    r"euro|crude)\b.{0,50}\b" + _MKT_VERB + r"|"
+    + _MKT_VERB + r"\b.{0,30}\b(stocks|shares|index|futures|nasdaq|yield|dollar|wall street)|"
+    r"bargain\ or\ a\ falling|target\ price|price\ target|market\ outlook|"
+    r"stock\ picks|stocks\ to\ (buy|watch)|top\ gainers|top\ losers)")
+
+
+def market_wrap(title):
+    """일상 시황 기사인가 — LLM 형식 판정이 없을 때만 쓰는 백스톱."""
+    return bool(MARKET_WRAP.search(title or ""))
+
 
 def topic_block(title):
     """주제 자체가 뉴스 가치 없는 것(스포츠·종교·생활·홍보/의례)이면 이유 문자열."""

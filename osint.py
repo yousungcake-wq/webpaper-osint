@@ -68,10 +68,10 @@ def db():
         key TEXT UNIQUE, title TEXT, descr TEXT, url TEXT,
         feed TEXT, cat TEXT, ts TEXT, first_seen TEXT,
         score REAL, posted INTEGER DEFAULT 0, posted_at TEXT, note TEXT,
-        beat TEXT, region TEXT, cu TEXT, summary TEXT)""")
-    for col in ("cu", "summary"):                 # 기존 DB 마이그레이션
+        beat TEXT, region TEXT, cu TEXT, summary TEXT, form TEXT, util INTEGER)""")
+    for col in ("cu", "summary", "form", "util"):      # 기존 DB 마이그레이션
         try:
-            con.execute(f"ALTER TABLE items ADD COLUMN {col} TEXT")
+            con.execute(f"ALTER TABLE items ADD COLUMN {col} {'INTEGER' if col=='util' else 'TEXT'}")
         except sqlite3.OperationalError:
             pass
     con.execute("""CREATE TABLE IF NOT EXISTS tr(key TEXT PRIMARY KEY, ko TEXT)""")
@@ -549,6 +549,50 @@ AFRICA_FEEDS = {
     "GN SudanTrib",
 }
 
+# ── 사건 예산 (2026-11-12) ────────────────────────────────────────────
+# 같은 사건이 하루에 7건씩 나간다(젠슨 황 스캔들 실측). 제목 토큰 유사도로는
+# '같은 사가의 다른 각도'를 못 묶는데, 그건 틀린 판정이 아니다(다른 기사다).
+# 그래서 사건의 고유명사 등장 빈도를 세어, 24시간에 3건 넘게 나간 이야기를
+# **균형 레인에서만** 감점한다. 우선 레인(HOT_Z)은 그대로 둔다 — 새 국면이면
+# 중요도로 뚫고 나가야 한다(이란 호르무즈 공격 같은 것).
+ENTITY_CAP = 3
+ENTITY_PEN = 6.0
+_STORY_STOP = {"the", "this", "that", "why", "what", "how", "after", "before", "new",
+               "more", "says", "said", "amid", "with", "from", "into", "over", "their",
+               "its", "his", "her", "and", "for", "not", "but", "you", "they", "when"}
+
+
+def story_tokens(title):
+    """제목의 고유명사 후보(대문자로 시작하는 4자 이상) — 소문자 집합."""
+    out = set()
+    for w in re.findall(r"\b[A-Z][A-Za-z0-9&]{3,}\b", title or ""):
+        lw = w.lower()
+        if lw not in _STORY_STOP:
+            out.add(lw)
+    return out
+
+
+def story_heat(con, hours=24):
+    """최근 N시간 게시 제목의 고유명사별 등장 횟수."""
+    since = (now_utc() - dt.timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M UTC")
+    cnt = {}
+    for (t,) in con.execute("SELECT title FROM items WHERE posted_at >= ?", (since,)):
+        for w in story_tokens(t):
+            cnt[w] = cnt.get(w, 0) + 1
+    return cnt
+
+
+def story_penalty(heat, title, cap=ENTITY_CAP, pen=ENTITY_PEN):
+    """이미 상한을 넘긴 이야기면 감점. 여러 개가 걸려도 한 번만."""
+    for w in story_tokens(title):
+        if heat.get(w, 0) >= cap:
+            return pen
+    return 0.0
+
+
+_ONESHOT = [0]      # 회차(프로세스)당 단건 분류 호출 수 — 한도 보호(최대 1)
+
+
 def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     """후보 검증(구글뉴스 해석·정크·만료·중복).
 
@@ -602,6 +646,39 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
         con.commit()
         log(f"{reason}: {title[:50]}")
         return None
+    # 형식 게이트 (2026-11-12) — 이 파이프라인의 주 게이트다.
+    # 👎 11건의 사유는 소재가 아니라 형식(일상 시황·보도자료·상황보고·전망·지방 정치)이었다.
+    # 비트 분류는 '무엇에 관한가'만 보므로 형식을 통과시킨다 → 분류 콜에서 같이 받아 여기서 버린다.
+    # 유용도를 못 받았으면(구형 응답·LLM 실패) 판단하지 않고 아래 정규식 백스톱에 맡긴다.
+    import beats as _bs
+    form = r[10] if len(r) > 10 else None
+    util = r[11] if len(r) > 11 else None
+    # 판정이 비어 있으면(주기 배치가 아직 안 돌았거나 429) **이 한 건만** 분류한다.
+    # 프롬프트가 짧아(~130토큰) 회차당 2건까지만 허용한다 — 배치가 하루 한도를
+    # 넘긴 전례(2026-11-12) 때문. 실패하면 아래 시황 백스톱으로 넘어간다.
+    if form is None and _ONESHOT[0] < 1:
+        _ONESHOT[0] += 1
+        try:
+            lab = _bs.classify_one(title)
+        except Exception:
+            lab = None
+        if lab:
+            form, util = lab[2], lab[3]
+            con.execute("""UPDATE items SET beat=?, beat_src='llm', region=?, form=?, util=?
+                           WHERE id=?""",
+                        (lab[0] or (r[8] if len(r) > 8 else ""),
+                         lab[1] or (r[9] if len(r) > 9 else ""), form, util, _id))
+    if _bs.drop_form(form, util):
+        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", _id))
+        con.commit()
+        log(f"form: {form} util={util} {title[:50]}")
+        return None
+    # LLM 분류가 죽은 회차(429 등)에는 form 이 비어 있다. 그때만 시황 백스톱을 쓴다.
+    if form is None and flt.market_wrap(title):
+        con.execute("UPDATE items SET posted=1, note='form:MARKET(rule)' WHERE id=?", (_id,))
+        con.commit()
+        log(f"form(rule): MARKET {title[:50]}")
+        return None
     try:                                     # 취향 축에서 여러 개가 겹쳐 밀리는 글
         import taste
         if taste.blocked(title, descr):
@@ -636,7 +713,7 @@ def pick(con, cfg):
         df = {}
 
     
-    sql = """SELECT id,title,descr,url,feed,cat,ts,score,beat,region FROM items
+    sql = """SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util FROM items
         WHERE posted=0 AND (beat=? OR (COALESCE(beat,'')=? AND cat=?))
         ORDER BY score DESC LIMIT 30"""
     cat_hint = {"TECH": "tech", "ECONOMY": "economy", "CONFLICT": "conflict",
@@ -677,7 +754,9 @@ def pick(con, cfg):
             con.execute("UPDATE items SET beat=? WHERE id=? AND COALESCE(beat,'')=''",
                         (b, r[0]))
             con.commit()
-            log(f"pick(hot): {b} score={r[7]:.1f} z={z:.1f} {r[1][:40]}")
+            log(f"pick(hot): {b} score={r[7]:.1f} z={z:.1f} "
+                f"form={r[10] if len(r) > 10 else '-'} util={r[11] if len(r) > 11 else '-'} "
+                f"{r[1][:40]}")
             row = list(r[:8])
             row[3] = real
             return tuple(row)
@@ -687,10 +766,13 @@ def pick(con, cfg):
     for z, b, r, reg in pool:
         if z >= _b.FLOOR_Z:
             by_beat.setdefault(b, []).append((z, b, r, reg))
-    # 비트별로 '지역이 모자란' 후보를 우선 고른다
+    # 비트별로 '지역이 모자란' 후보를 우선 고르되, 이미 하루 3건 넘게 나간
+    # 이야기는 감점한다(사건 예산). 같은 사건이 슬롯을 독점하지 않게 하는 장치다.
+    heat = story_heat(con)
     best = {}
     for b, rows in by_beat.items():
-        rows.sort(key=lambda x: (-(rdef.get(x[3], 0) > 0), -x[0]))
+        rows.sort(key=lambda x: (-(rdef.get(x[3], 0) > 0),
+                                 -(x[0] - story_penalty(heat, x[2][1]))))
         best[b] = rows[0]
     for b, _deficit in _b.beat_deficits(con):
         if b not in best:
@@ -701,7 +783,10 @@ def pick(con, cfg):
             con.execute("UPDATE items SET beat=? WHERE id=? AND COALESCE(beat,'')=''",
                         (b, r[0]))
             con.commit()
-            log(f"pick: {b} score={r[7]:.1f} z={z:.1f}")
+            pen = story_penalty(heat, r[1])
+            log(f"pick: {b} score={r[7]:.1f} z={z:.1f} "
+                f"form={r[10] if len(r) > 10 else '-'} util={r[11] if len(r) > 11 else '-'}"
+                f"{f' story-{pen:.0f}' if pen else ''}")
             row = list(r[:8])
             row[3] = real
             return tuple(row)
@@ -1007,7 +1092,7 @@ def daemon():
                 try:                                  # 비트 분류 (시간당 1회, 배치 1콜)
                     import beats
                     beats.backfill_kw(con)
-                    n_cls = beats.classify_pending(con)
+                    n_cls, _ = beats.classify_pending(con)
                     log(f"classify {n_cls}")
                 except Exception as e:
                     log(f"classify error: {e}")

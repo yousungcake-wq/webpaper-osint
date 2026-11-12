@@ -17,7 +17,39 @@ import urllib.request
 
 BEATS = ["TECH", "ECONOMY", "CONFLICT", "POLITICS", "OTHER"]
 # OTHER(기타)도 게시한다 — "명확히 분류되지 않는 국제 뉴스"이지 쓰레기 통이 아니다.
-TARGET = {"TECH": 2, "ECONOMY": 3, "CONFLICT": 2, "POLITICS": 1, "OTHER": 2}  # 10건 기준
+# 2026-11-12: ECONOMY 3→2, OTHER 2→1. 실측 오염률이 ECONOMY 60%·OTHER 45%(CONFLICT 6%)라
+# 쿼터가 곧 오염 배분기였다. 이 값은 '채울 순서'만 정하므로 낮춰도 분쟁이 독점하지 않는다
+# (z 점수 정규화가 이미 비트 간 공정성을 맡는다).
+TARGET = {"TECH": 2, "ECONOMY": 2, "CONFLICT": 2, "POLITICS": 1, "OTHER": 1}  # 10건 기준
+
+# ── 형식(form) 분류 (2026-11-12) ─────────────────────────────────────────
+# 왜: 👎 11건을 읽어 보니 싫은 이유가 소재·지역이 아니라 **글의 형식**이었다.
+#     일상 시황 / 보도자료 / 상황보고 / 전망-only / 지방 정치.
+#     그런데 분류 프롬프트는 비트·지역만 물어서 그 판단을 담을 곳이 없었다.
+#     → 같은 LLM 콜에서 형식과 유용도(0-10)를 같이 받는다(추가 호출 0).
+# 형식 코드
+FORMS = ("NEWS", "MARKET", "PROMO", "FORECAST", "LOCAL", "REPORT", "LIFE")
+FORM_KO = {"NEWS": "사건", "MARKET": "시황", "PROMO": "홍보", "FORECAST": "전망",
+           "LOCAL": "지방", "REPORT": "상황보고", "LIFE": "생활"}
+FORM_MIN_UTILITY = 4          # 형식이 NEWS 가 아니면 이 점수 미만은 버린다
+
+
+def drop_form(form, util, min_utility=FORM_MIN_UTILITY):
+    """형식 판정으로 버릴 기사인가 (2026-11-12).
+
+    유용도를 못 받았으면(구형 3필드 응답·LLM 실패) 판단하지 않는다 — 그때는
+    정규식 백스톱이 잡는다. 애매하면 남기는 쪽이 안전하다(좋은 기사를 버리는 비용이 더 크다).
+    """
+    if util is None:
+        return False
+    try:
+        u = int(util)
+    except (TypeError, ValueError):
+        return False
+    f = (form or "NEWS").upper()
+    if f != "NEWS":
+        return u < min_utility
+    return u <= 1
 
 # 소스 카테고리·예전 상태값을 새 비트로 흡수한다.
 LEGACY = {"FINANCE": "ECONOMY", "COMMODITY": "ECONOMY", "MARKETS": "ECONOMY"}
@@ -182,7 +214,9 @@ def kw_beat(title, cat=""):
 
 
 # ── LLM 배치 분류 ────────────────────────────────────────────────
-PROMPT = """다음 뉴스 제목을 비트와 지역으로 분류해라. 설명 없이 "번호:비트:지역" 형식으로만 한 줄씩 답한다.
+PROMPT = """다음 뉴스 제목을 분류해라. 설명 없이 "번호:비트:지역:형식:유용도" 형식으로만 한 줄씩 답한다.
+예) 1:TECH:ASIA:NEWS:8   2:ECONOMY:GLOBAL:MARKET:2   3:OTHER:EUROPE:PROMO:1
+
 비트:
 - TECH: 기술·AI·반도체·플랫폼·사이버·우주
 - ECONOMY: 경제 전체 — 금융·증시·금리·물가·무역·기업 실적·M&A·원자재·에너지·노동
@@ -191,11 +225,27 @@ PROMPT = """다음 뉴스 제목을 비트와 지역으로 분류해라. 설명 
 - OTHER: 위 넷에 **명확히** 안 들어가는 뉴스. 정상회의·외교 접촉·인물 동향·국제기구·사회·문화·재난·사법 등.
 
 판단 기준: 확신이 안 서면 OTHER 로 보낸다. 예를 들어 "카타르 총리, 파리 G7 회의서 이란 위기 논의"는
-선거·의회가 아니라 외교 일정이므로 POLITICS 가 아니라 OTHER:국제 다.
+선거·의회가 아니라 외교 일정이므로 POLITICS 가 아니라 OTHER 다.
 경제와 기술이 겹치면 주된 축으로 고른다(반도체 실적 전망 → TECH, 유가·금리·물가 → ECONOMY).
-홍보성 보도자료·행사 안내·연예 가십은 뉴스가 아니므로 분류 대상이 아니다.
+
 지역: EUROPE(유럽·러시아 서부), LATAM(중남미·카리브), US(미국·캐나다), ASIA(동아시아·남아시아·동남아·중앙아·오세아니아), AFRICA(사하라 이남 아프리카), MIDDLE_EAST(중동·북아프리카·이란·이스라엘), GLOBAL(여러 지역에 걸친 사안이거나 본문의 주체가 특정 국가가 아님)
 사건이 일어난 곳이 아니라 **기사의 주체** 기준으로 고른다.
+
+형식 — **무엇에 관한 기사인가가 아니라 어떤 종류의 글인가**를 본다. 주제가 경제여도 시황이면 MARKET 이다.
+- NEWS: 사건·발표·결정·조치가 있다. (공습, 제재, 금리 결정, 인선, 사고, 기업 인수, 규제 발표)
+- MARKET: 일상적 시세·지수 등락·개별 종목 등락·종목 추천·"stock market today"·시황 중계·수익률 표.
+- PROMO: 보도자료 — 행사 개최/확장, 수상, MOU, 기념식, 기관 홍보, 신제품 광고.
+- FORECAST: 사건 없이 전망·예측·"~할 수 있다"·"~할까?"·애널리스트 의견만 있는 글.
+- LOCAL: 한 나라 안의 지방 정치·의례·연설·선거 운동·지역 행사 (국제 정치가 아닌 것).
+- REPORT: 인도지원 상황보고·통계 보고서·"Update #12"·주간 집계.
+- LIFE: 종교·연예·스포츠·생활·문화.
+
+유용도 0-10 — 이 기사를 읽고 국제 정세를 이해하는 데 얼마나 쓸모가 있는가.
+- 9-10 체계적: 다자 관계·시장·안보 구도를 바꾸는 사건
+- 7-8 중요: 한 나라나 산업에 뚜렷한 영향을 주는 사건
+- 5-6 참고: 구체적 사실이 있으나 파급이 제한적
+- 3-4 낮음: 일상적 등락, 예상된 결과, 근거 약한 전망, 지역 행사
+- 0-2 소음: 홍보, 소문, 선정적 예측, 통계 나열
 
 {titles}"""
 
@@ -208,22 +258,23 @@ def _post(url, payload, headers, timeout=30):   # 5분 주기 안에 끝나야 �
         return json.loads(r.read().decode())
 
 
-def _llm_labels(titles):
-    """제목 리스트 → 비트 리스트. 실패하면 None."""
-    body_text = "\n".join(f"{i+1}. {t[:110]}" for i, t in enumerate(titles))
-    prompt = PROMPT.format(titles=body_text)
+def _call_text(prompt, max_tokens=2000, timeout=20):
+    """분류용 LLM 1회 호출 — Groq → Gemini → NVIDIA. 실패하면 "".
 
+    무료 한도가 좁다(Groq 200k 토큰/일). 그래서 호출부가 주기를 조절하고,
+    같은 기사를 두 번 분류하지 않도록 run_once 가 판정을 state 에 남긴다.
+    """
     key = os.environ.get("GROQ_API_KEY", "").strip()
     if key:
         try:
             r = _post("https://api.groq.com/openai/v1/chat/completions",
                       {"model": "openai/gpt-oss-120b", "temperature": 0,
-                       "max_tokens": 2000, "reasoning_effort": "low",
+                       "max_tokens": max_tokens, "reasoning_effort": "low",
                        "messages": [{"role": "user", "content": prompt}]},
-                      {"Authorization": f"Bearer {key}"}, timeout=20)
-            out = r["choices"][0]["message"]["content"]
-            if out and out.strip():
-                return _parse(out, len(titles))
+                      {"Authorization": f"Bearer {key}"}, timeout=timeout)
+            out = (r["choices"][0]["message"].get("content") or "").strip()
+            if out:
+                return out
         except Exception as e:
             print(f"[beats] groq {type(e).__name__}: {str(e)[:100]}", flush=True)
 
@@ -233,10 +284,11 @@ def _llm_labels(titles):
             r = _post("https://generativelanguage.googleapis.com/v1beta/models/"
                       "gemini-3-flash-preview:generateContent?key=" + key,
                       {"contents": [{"parts": [{"text": prompt}]}],
-                       "generationConfig": {"temperature": 0, "maxOutputTokens": 2048}},
-                      {}, timeout=20)
-            out = r["candidates"][0]["content"]["parts"][0]["text"]
-            return _parse(out, len(titles))
+                       "generationConfig": {"temperature": 0, "maxOutputTokens": max_tokens}},
+                      {}, timeout=timeout)
+            out = ((r.get("candidates") or [{}])[0].get("content", {}).get("parts") or [{}])[0].get("text", "").strip()
+            if out:
+                return out
         except Exception as e:
             print(f"[beats] gemini {type(e).__name__}: {str(e)[:100]}", flush=True)
 
@@ -245,12 +297,38 @@ def _llm_labels(titles):
         import llm
         out = llm.call_nvidia(os.environ.get("NVIDIA_API_KEY", "").strip(), prompt)
         if out:
-            labels = _parse(out, len(titles))
-            if labels:
-                return labels
+            return out.strip()
     except Exception as e:
         print(f"[beats] nvidia {type(e).__name__}: {str(e)[:100]}", flush=True)
-    return None
+    return ""
+
+
+def _llm_labels(titles):
+    """제목 리스트 → [(beat, region, form, util)]. 실패하면 None."""
+    body_text = "\n".join(f"{i+1}. {t[:110]}" for i, t in enumerate(titles))
+    out = _call_text(PROMPT.format(titles=body_text), max_tokens=2000)
+    return _parse(out, len(titles)) if out else None
+
+
+# 한 건짜리 분류 — 고른 후보의 형식이 비어 있을 때만 부른다(pick 안에서).
+# 배치 프롬프트의 루브릭이 600토큰이라 5분마다 부르면 하루 한도를 넘는다.
+# 이 프롬프트는 ~130토큰이다.
+ONE_PROMPT = """제목 하나를 분류해라. "비트:지역:형식:유용도" 한 줄만 답한다.
+비트: TECH ECONOMY CONFLICT POLITICS OTHER
+지역: EUROPE LATAM US ASIA AFRICA MIDDLE_EAST GLOBAL
+형식: NEWS(사건·결정·조치) MARKET(일상 시세·지수·종목 등락) PROMO(보도자료·행사·수상)
+     FORECAST(사건 없이 전망만) LOCAL(지방 정치·의례·연설) REPORT(상황보고·통계) LIFE(종교·연예·스포츠·생활)
+유용도 0-10: 9-10 체계적 변화 / 7-8 중요 / 5-6 참고 / 3-4 일상 등락·예상된 결과·약한 전망 / 0-2 홍보·소문
+제목: {title}"""
+
+
+def classify_one(title):
+    """제목 1건 분류. 실패하면 None(호출부는 정규식 백스톱으로 넘어간다)."""
+    out = _call_text(ONE_PROMPT.format(title=(title or "")[:130]), max_tokens=24, timeout=12)
+    if not out:
+        return None
+    labs = _parse(out, 1)
+    return labs[0] if labs else None
 
 
 _BIT_RE = re.compile(r"(TECH|FINANCE|CONFLICT|COMMODITY|ECONOMY|POLITICS|OTHER)", re.I)
@@ -262,29 +340,44 @@ LLM_REGIONS = ("EUROPE", "LATAM", "US", "ASIA", "AFRICA", "MIDDLE_EAST", "GLOBAL
 
 
 def _parse(text, n):
-    """'번호:비트:지역' → [(beat, region|None)].
+    """'번호:비트:지역[:형식[:유용도]]' → [(beat, region, form, util)].
 
     지역이 없으면 None 으로 두고 호출부에서 키워드 분류(kw_region)로 메운다.
     (2026-11-08: 비트만 물어보던 것을 같은 콜에서 지역까지 받도록 확장 — GLOBAL 43% 대응)
+    2026-11-12: 형식·유용도 추가. **3필드 응답도 그대로 받는다**(form/util=None) —
+    모델이 옛 형식으로 답하거나 프롬프트를 일부만 따를 때 분류 자체가 죽으면 안 된다.
     """
     labels = [None] * n
     for line in text.splitlines():
-        m = re.match(r"\s*(\d+)\s*[:.\)]\s*(.+)", line.strip())
+        m = (re.match(r"\s*(\d+)\s*[:.\)]\s*(.+)", line.strip())
+             or re.match(r"\s*(\d+)\s+(.+)", line.strip()))
         if not m:
             continue
         i = int(m.group(1)) - 1
         if not (0 <= i < n):
             continue
         rest = m.group(2)
-        bm = _BIT_RE.search(rest)
-        if not bm:
-            continue
-        region = None
-        for r in LLM_REGIONS:
-            if re.search(r"\b" + r + r"\b", rest, re.I):
-                region = r
-                break
-        labels[i] = (_bit(bm.group(1)), region)
+        # 순서를 가정하지 않고 필드 성질로 집어낸다(모델이 순서·구두점을 바꿔도 살린다).
+        beat = region = form = util = None
+        for f in re.split(r"[:|;,]", rest):
+            for g in f.replace("(", " ").replace(")", " ").split():
+                g = g.strip(".").upper()
+                if not g:
+                    continue
+                if beat is None and _BIT_RE.fullmatch(g):
+                    beat = _bit(g)
+                elif region is None and g in LLM_REGIONS:
+                    region = g
+                elif form is None and g in FORMS:
+                    form = g
+                elif util is None and re.fullmatch(r"\d{1,2}", g):
+                    util = min(10, int(g))
+        if beat is None:
+            bm = _BIT_RE.search(rest)                     # 마지막 폴백: 문장 안의 비트 단어
+            if not bm:
+                continue
+            beat = _bit(bm.group(1))
+        labels[i] = (beat, region, form, util)
     if sum(1 for x in labels if x) < n * 0.6:
         return None
     return labels
@@ -330,10 +423,13 @@ def classify_pending(con, per_beat=10, max_total=60):
     labels = _llm_labels(titles)
 
     n = 0
+    got_llm = [0]
     for k, (_id, kw) in enumerate(picked):
         lab = labels[k] if labels and labels[k] else None
         beat = (lab[0] if lab else None) or kw
         region = (lab[1] if lab else None) or kw_region(titles[k])
+        form = lab[2] if lab else None
+        util = lab[3] if lab else None
         # ── LLM 보정 (2026-11-11 실측: "나이지리아 경찰청장 테러 피해 지역 병력 배치"가
         #    OTHER/GLOBAL 로 분류돼 '국제·기타'로 나갔다) ─────────────────────
         kr = kw_region(titles[k])
@@ -345,11 +441,28 @@ def classify_pending(con, per_beat=10, max_total=60):
             kwb = kw_beat(titles[k])
             if kwb and kwb != "OTHER":
                 beat = kwb                   # '기타'로 보냈는데 키워드가 확실하면 그쪽으로
-        con.execute("UPDATE items SET beat=?, beat_src='llm', region=? WHERE id=?",
-                    (beat, region, _id))
+        # LLM 이 실패한 회차(labels=None)는 beat_src='kw' 로 남겨 **다음 회차에 다시 시도**한다.
+        # 예전에는 실패해도 'llm' 으로 찍어서, 429 한 번에 그 기사가 영원히
+        # 형식·유용도 없이(→ 형식 게이트 밖에서) 게시됐다 (2026-11-12 드라이런에서 발견).
+        src = "llm" if lab else "kw"
+        if src == "kw" and form is not None:
+            src = "llm"
+        con.execute("""UPDATE items SET beat=?, beat_src=?, region=?, form=?, util=?
+                       WHERE id=?""", (beat, src, region, form, util, _id))
+        if form is not None:
+            got_llm[0] += 1
         n += 1
     con.commit()
-    return n
+    return n, got_llm[0]
+
+
+def form_stats(con, days=2):
+    """형식 분포 — 게이트가 실제로 무엇을 버리는지 보는 창(운영 점검용)."""
+    rows = con.execute("""SELECT COALESCE(NULLIF(form,''),'(미분류)'), COUNT(*),
+            SUM(CASE WHEN note='form' OR note LIKE 'form:%' THEN 1 ELSE 0 END)
+        FROM items GROUP BY 1 ORDER BY 2 DESC""").fetchall()
+    for f, n, blocked in rows:
+        print(f"  {f:<9} {n:>5}건  차단 {blocked or 0}")
 
 
 HOT_Z = 4.0               # 비트 내 이례적 수준이면 쿼터 무시 (우선 레인)
@@ -437,5 +550,6 @@ if __name__ == "__main__":
     import sys
     db = sys.argv[1] if len(sys.argv) > 1 else "/var/minis/shared/osint/osint.db"
     con = sqlite3.connect(db)
-    print("분류:", classify_pending(con), "건")
+    n_cls, n_llm = classify_pending(con)
+    print(f"분류: {n_cls}건 (LLM {n_llm})")
     print("부족분:", beat_deficits(con))
