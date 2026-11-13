@@ -480,7 +480,7 @@ def same_event(a, b, df, n_docs=1800):
 
 _FEED_BAD = {"at": 0.0, "set": set()}
 
-DUP_THR = 0.18   # 근거는 dup_body 문서화 주석 참조
+DUP_THR = 0.16   # 근거는 dup_body 문서화 주석 참조 (0.16~0.18 구간도 전부 같은 사건이었다)
 
 def dup_body(con, body, hours=72, thr=DUP_THR):
     """생성된 요약문이 최근 게시분과 같은 사건인가 (교차 매체 중복).
@@ -493,7 +493,8 @@ def dup_body(con, body, hours=72, thr=DUP_THR):
       · 0.18 ~ 0.22: 12쌍, 전부 같은 사건(프랑스 냉장고 해킹 5건 / 예멘 사나 공습 3건 /
         젠슨 황 스파이 4건) — 0.16~0.18 구간도 전부 같은 사건이었다.
       · 0.15 이하: 같은 '사가'의 다른 각도(주가 급락 vs 이사회 조사) — 차단하면 과잉.
-    그래서 0.18. 시뮬레이션: 198건 중 7건 차단(3.5%), 전부 실제 중복.
+    그래서 0.18 → 2026-11-13 에 **0.16** 으로 낮췄다(관측된 0.16~0.18 쌍도 전부 같은 사건).
+젠슨 황 소환을 다룬 두 글이 15분 간격으로 0.167 이라 통과한 사례가 계기.
     """
     if not body or len(body) < 40:
         return None
@@ -1295,9 +1296,16 @@ def _llm_publish_locked(con, cfg, llm):
     dpath = pend[0] if pend else None
     if dpath:
         d = json.load(open(dpath, encoding="utf-8"))
-        # 큐에 남은 초안은 pick 을 거치지 않고 여기서 바로 나간다. 만드는 사이에 같은
-        # 사건이 다른 매체로 먼저 게시됐을 수 있으므로 보내기 전에 중복을 다시 본다
-        # (2026-11-13: 하루 전 사건이 '속보'로 다시 나간 경로 중 하나).
+    else:
+        d = make_draft(con, cfg)
+        dpath = f"{QUEUE}/{d['id']}.json" if d else None
+    if not d:
+        log("publish: 후보 없음(모두 필터됨)")
+        return None
+    # 보내기 직전 제목 중복 재검사 — pick/큐 어느 경로로 왔든 마지막으로 한 번 더 본다.
+    # (2026-11-13: 같은 사건이 15분 간격으로 두 번 나갔다. pick 단계 판정은 그 순간의
+    #  상태에 의존하고, 새 회차가 이전 회차 기록을 못 본 경우를 여기서 막는다.)
+    if not DRY:
         recent = [t for (t,) in con.execute(
             "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 300")]
         if any(similar(d.get("title", ""), t) > 0.45
@@ -1305,15 +1313,9 @@ def _llm_publish_locked(con, cfg, llm):
             con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (d["id"],))
             con.commit()
             with contextlib.suppress(OSError):
-                os.remove(dpath)
-            log(f"dup(queued): {d.get('title', '')[:50]}")
+                os.remove(dpath or "")
+            log(f"dup(pre-send): {d.get('title', '')[:50]}")
             return None
-    else:
-        d = make_draft(con, cfg)
-        dpath = f"{QUEUE}/{d['id']}.json" if d else None
-    if not d:
-        log("publish: 후보 없음(모두 필터됨)")
-        return None
     # 마지막 형식 게이트 — 요약(비싼 콜) 전에, 실제로 내보낼 1건만 판정한다.
     if not form_gate_item(con, d["id"], d["title"]):
         log("publish: 형식 게이트에서 차단")
