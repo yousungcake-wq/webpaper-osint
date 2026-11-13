@@ -1163,6 +1163,17 @@ def daemon():
 QUEUE = f"{BASE}/queue"
 
 
+def _is_dup_title(con, title, hours=72):
+    """최근 게시 제목과 같은 사건인가 — 보내기 직전 마지막 확인용."""
+    if not title:
+        return False
+    cutoff = (now_utc() - dt.timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M UTC")
+    rows = [t for (t,) in con.execute(
+        """SELECT title FROM items WHERE posted=1 AND posted_at>=?
+           ORDER BY posted_at DESC LIMIT 400""", (cutoff,))]
+    return any(similar(title, t) > 0.45 or same_event(title, t, {}) for t in rows)
+
+
 def make_draft(con, cfg):
     """후보 1건을 골라 기사 본문까지 붙여 큐 파일로 저장. (모델 작성용)"""
     import writer
@@ -1217,6 +1228,13 @@ def make_draft(con, cfg):
                 con.commit()
                 log(f"no_body: {feed[:16]} {title[:50]}")
                 continue
+        # 같은 사건이 이미 나갔으면 이 후보를 버리고 다음 후보로 넘어간다.
+        # (회차를 통째로 비우지 않으려면 여기서 continue 해야 한다 — 2026-11-13)
+        if _is_dup_title(con, title):
+            con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (_id,))
+            con.commit()
+            log(f"dup(draft): {title[:50]}")
+            continue
         srcs = [{"feed": feed, "url": url}] + [{"feed": f, "url": u} for f, u in related(con, title, url, feed)]
         draft = {"id": _id, "title": title, "url": url, "feed": feed, "cat": cat,
                  "ts": ts, "score": sc, "text": text, "thin": thin, "sources": srcs}
@@ -1305,20 +1323,16 @@ def _llm_publish_locked(con, cfg, llm):
     if not d:
         log("publish: 후보 없음(모두 필터됨)")
         return None
-    # 보내기 직전 제목 중복 재검사 — pick/큐 어느 경로로 왔든 마지막으로 한 번 더 본다.
-    # (2026-11-13: 같은 사건이 15분 간격으로 두 번 나갔다. pick 단계 판정은 그 순간의
-    #  상태에 의존하고, 새 회차가 이전 회차 기록을 못 본 경우를 여기서 막는다.)
-    if not DRY:
-        recent = [t for (t,) in con.execute(
-            "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 300")]
-        if any(similar(d.get("title", ""), t) > 0.45
-               or same_event(d.get("title", ""), t, {}) for t in recent):
-            con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (d["id"],))
-            con.commit()
-            with contextlib.suppress(OSError):
-                os.remove(dpath or "")
-            log(f"dup(pre-send): {d.get('title', '')[:50]}")
-            return None
+    # 큐에 남은 초안은 pick 을 거치지 않고 여기서 바로 나간다. 만드는 사이에 같은 사건이
+    # 다른 매체로 먼저 게시됐을 수 있으므로 보내기 전에 중복을 다시 본다.
+    # (fresh 초안은 make_draft 안에서 검사한다 — 거기서는 다음 후보로 넘어갈 수 있다.)
+    if dpath and _is_dup_title(con, d.get("title", "")):
+        con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (d["id"],))
+        con.commit()
+        with contextlib.suppress(OSError):
+            os.remove(dpath)
+        log(f"dup(queued): {d.get('title', '')[:50]}")
+        return None
     # 마지막 형식 게이트 — 요약(비싼 콜) 전에, 실제로 내보낼 1건만 판정한다.
     if not form_gate_item(con, d["id"], d["title"]):
         log("publish: 형식 게이트에서 차단")
