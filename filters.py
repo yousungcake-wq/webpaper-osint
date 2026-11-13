@@ -61,6 +61,19 @@ NONNEWS = re.compile(
     r"\bpay\ off\b.{0,30}\bmortgage\b|here'?s\ how\ much|what\ to\ do\ if"
     r")")
 
+# 건강·의학·생물학 연구 보도 — 사용자 지시(2026-11-13): "과학 연구 기사 뺌".
+# 실측 659건 중 1건 적중(그 1건이 정확히 지적된 사례). 제목에 드물게만 나타나므로
+# 이 규칙은 백스톱이고, 주 판정은 분류 LLM 의 STUDY 형식이 맡는다.
+STUDY = re.compile(
+    r"(?ix)("
+    r"study\ (finds?|suggests?|shows?|reveals?)|"
+    r"researchers?\ (found|say|said|report|discover)|"
+    r"scientists?\ (found|say|said|discover|report)|"
+    r"according\ to\ a\ (new\ )?study|"
+    r"published\ in\ (the\ )?(journal|lancet|jama|nejm|bmj|nature|science|plos)|"
+    r"peer-?reviewed|clinical\ trial|\b(lancet|jama|nejm|bmj)\b"
+    r")")
+
 STOCK_PICK = re.compile(
     r"(?i)(stock picks?|stocks to buy|top picks?|best stocks|"
     r"investment ideas|buy list|market outlook|worth (buying|watching))")
@@ -141,6 +154,8 @@ def is_digest(title, url):
         return "opinion"
     if NONNEWS.search(t):
         return "nonnews"
+    if STUDY.search(t):
+        return "study"
     if OPINION_TITLE.search(t) and len(t) < 220:
         return "opinion"
     return None

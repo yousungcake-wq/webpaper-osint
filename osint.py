@@ -12,6 +12,7 @@ DB: /var/minis/shared/osint/osint.db
 설정: /var/minis/shared/osint/config.json
 """
 import argparse, hashlib, json, os, re, sqlite3, subprocess, sys, time
+import contextlib
 import datetime as dt
 import urllib.parse, urllib.request
 
@@ -556,7 +557,7 @@ AFRICA_FEEDS = {
 # **균형 레인에서만** 감점한다. 우선 레인(HOT_Z)은 그대로 둔다 — 새 국면이면
 # 중요도로 뚫고 나가야 한다(이란 호르무즈 공격 같은 것).
 ENTITY_CAP = 3
-ENTITY_PEN = 6.0
+ENTITY_PEN = 8.0
 _STORY_STOP = {"the", "this", "that", "why", "what", "how", "after", "before", "new",
                "more", "says", "said", "amid", "with", "from", "into", "over", "their",
                "its", "his", "her", "and", "for", "not", "but", "you", "they", "when"}
@@ -722,8 +723,11 @@ def pick(con, cfg):
     import beats as _b
     cutoff = now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
     cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
+    # 중복 판정 창을 80건(≈10시간)에서 300건(≈3일)으로 넓힌다.
+    # 2026-11-13 실측: 하루 전 사건(젠슨 황 사임)이 다음 날 '속보'로 다시 나갔다.
+    # 창이 10시간이면 그 사이 다른 매체가 쓴 같은 사건을 못 잡는다.
     recent = [r[0] for r in con.execute(
-        "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 80")]
+        "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 300")]
     try:
         df = df_map(con)
     except Exception:
@@ -761,10 +765,15 @@ def pick(con, cfg):
     pool.sort(key=lambda x: -x[0])
 
     recent_c = _b.beat_counts(con, window=5)
+    hot_heat = story_heat(con)
     for z, b, r, reg in pool:
         if z < _b.HOT_Z:
             break
         if recent_c.get(b, 0) >= 3:          # 같은 비트가 최근 5건 중 3건 이상이면 우선 레인 금지
+            continue
+        # 같은 사건이 24시간에 6건 넘게 나갔으면 우선 레인에서도 막는다.
+        # (2026-11-13: 엔비디아·젠슨 황이 42시간에 63건. 새 국면이면 z 가 더 높다.)
+        if story_penalty(hot_heat, r[1], cap=6) > 0:
             continue
         real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
         if real:
@@ -1286,6 +1295,19 @@ def _llm_publish_locked(con, cfg, llm):
     dpath = pend[0] if pend else None
     if dpath:
         d = json.load(open(dpath, encoding="utf-8"))
+        # 큐에 남은 초안은 pick 을 거치지 않고 여기서 바로 나간다. 만드는 사이에 같은
+        # 사건이 다른 매체로 먼저 게시됐을 수 있으므로 보내기 전에 중복을 다시 본다
+        # (2026-11-13: 하루 전 사건이 '속보'로 다시 나간 경로 중 하나).
+        recent = [t for (t,) in con.execute(
+            "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 300")]
+        if any(similar(d.get("title", ""), t) > 0.45
+               or same_event(d.get("title", ""), t, {}) for t in recent):
+            con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (d["id"],))
+            con.commit()
+            with contextlib.suppress(OSError):
+                os.remove(dpath)
+            log(f"dup(queued): {d.get('title', '')[:50]}")
+            return None
     else:
         d = make_draft(con, cfg)
         dpath = f"{QUEUE}/{d['id']}.json" if d else None

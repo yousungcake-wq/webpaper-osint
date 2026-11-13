@@ -57,6 +57,9 @@ check("gate_forecast_low", beats.drop_form("FORECAST", 4), True)
 check("gate_promo_low", beats.drop_form("PROMO", 1), True)
 check("gate_report_low", beats.drop_form("REPORT", 2), True)
 check("gate_report_high", beats.drop_form("REPORT", 7), False)
+check("gate_study_always", beats.drop_form("STUDY", 10), True)
+check("gate_study_parse", beats._parse("1:TECH:GLOBAL:STUDY:9", 1),
+      [("TECH", "GLOBAL", "STUDY", 9)])
 check("gate_news_ok", beats.drop_form("NEWS", 6), False)
 check("gate_news_noise", beats.drop_form("NEWS", 1), True)
 check("gate_form_missing", beats.drop_form(None, 2), False)     # 형식 미상 → 판단 보류
@@ -109,6 +112,10 @@ check("last_gate_rule_note", con.execute("SELECT note FROM items WHERE id=1").fe
 beats.classify_one = lambda title: None
 con.execute("UPDATE items SET posted=0, note=NULL, form=NULL, util=NULL, title=? WHERE id=1",
             ("G7 foreign ministers say China actions east of Taiwan threaten stability",))
+check("study_rule", filters.is_digest("Study finds coffee linked to longer life", ""), "study")
+check("spread_dedupe_window", osint.same_event(
+    "Jensen Huang resigns as Nvidia CEO after mounting scandals",
+    "Exclusive: US DOJ probes Nvidia as fallout from Huang's resignation ripples", {}), True)
 check("last_gate_passes_unknown", osint.form_gate_item(con, 1, "G7 foreign ministers say"), True)
 
 # ── 4. 사건 예산 ─────────────────────────────────────────────────────

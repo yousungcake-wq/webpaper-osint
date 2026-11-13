@@ -316,7 +316,7 @@ def install_loose_pick():
         cutoff = osint.now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
         cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
         recent = [r[0] for r in con.execute(
-            "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 80")]
+            "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 300")]
         df = osint.df_map(con)
 
         def usable(r):
