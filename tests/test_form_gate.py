@@ -49,7 +49,7 @@ check("parse_drops_garbage_line", beats._parse("1: ???", 1), None)
 check("gate_market_low", beats.drop_form("MARKET", 2), True)
 check("gate_market_low_mid", beats.drop_form("MARKET", 5), True)   # 일상 시황은 유용도가 높아도 버린다
 check("gate_market_big", beats.drop_form("MARKET", 8), False)      # 모델이 큰 사건으로 본 경우만 통과
-check("gate_local_low", beats.drop_form("LOCAL", 2), True)
+check("gate_local_low", beats.drop_form("LOCAL", 3), True)
 check("gate_local_mid", beats.drop_form("LOCAL", 4), False)
 check("gate_local_verylow", beats.drop_form("LOCAL", 2), True)
 check("gate_forecast_mid", beats.drop_form("FORECAST", 6), False)

@@ -51,6 +51,16 @@ ESSAY = re.compile(
     r"(?i)(\bop-?ed\b|\bcommentary\b|\bcritique\b|\bessay\b|\bcolumn\b|"
     r"\bviewpoint\b|\bperspective\b|\bthe big picture\b|\bpodcast\b|\btranscript\b)")
 
+# 뉴스가 아닌 글 — 조언 칼럼·영화 시상·시황 요약·미리보기 목록 (2026-11-13 실측 4/4 정확)
+NONNEWS = re.compile(
+    r"(?ix)("
+    r"\b\d+\ things\ to\ (watch|know)|call\ sheet|\#video_?news|"
+    r"(wins?|won|takes?)\b.{0,30}\b(awards?|prizes?|medals?)\b|"
+    r"\b(oscars?|golden\ rooster|golden\ globe|film\ festival)\b|"
+    r"^(my|our)\ (wife|husband|partner|family)\b|should\ (we|i|you)\b|"
+    r"\bpay\ off\b.{0,30}\bmortgage\b|here'?s\ how\ much|what\ to\ do\ if"
+    r")")
+
 STOCK_PICK = re.compile(
     r"(?i)(stock picks?|stocks to buy|top picks?|best stocks|"
     r"investment ideas|buy list|market outlook|worth (buying|watching))")
@@ -129,6 +139,8 @@ def is_digest(title, url):
         return "stockpick"
     if ESSAY.search(t):
         return "opinion"
+    if NONNEWS.search(t):
+        return "nonnews"
     if OPINION_TITLE.search(t) and len(t) < 220:
         return "opinion"
     return None
