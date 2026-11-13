@@ -37,6 +37,9 @@ DEFAULT_CONF = {
 }
 
 
+DRY = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
+
+
 def conf():
     c = dict(DEFAULT_CONF)
     if os.path.exists(CONF):
