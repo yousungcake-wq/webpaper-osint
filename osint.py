@@ -727,11 +727,14 @@ def pick(con, cfg):
     import beats as _b
     cutoff = now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
     cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
-    # 중복 판정 창을 80건(≈10시간)에서 300건(≈3일)으로 넓힌다.
-    # 2026-11-13 실측: 하루 전 사건(젠슨 황 사임)이 다음 날 '속보'로 다시 나갔다.
-    # 창이 10시간이면 그 사이 다른 매체가 쓴 같은 사건을 못 잡는다.
+    # 중복 판정 창: **36시간**. 80건(≈10시간)이던 때 하루 전 사건이 '속보'로 다시 나갔다.
+    # 그렇다고 300건(건수 기준)으로 두면 게시량이 줄 때 창이 4일까지 늘어나
+    # 서로 다른 사건까지 묶인다(2026-11-14 실측: dup 차단이 시간당 178건, 게시 8→3건/h).
+    # 그래서 건수가 아니라 **시간**으로 자른다.
+    _cut = (now_utc() - dt.timedelta(hours=36)).strftime("%Y-%m-%d %H:%M UTC")
     recent = [r[0] for r in con.execute(
-        "SELECT title FROM items WHERE posted=1 ORDER BY posted_at DESC LIMIT 300")]
+        "SELECT title FROM items WHERE posted=1 AND posted_at>=? "
+        "ORDER BY posted_at DESC LIMIT 400", (_cut,))]
     try:
         df = df_map(con)
     except Exception:
@@ -1163,15 +1166,21 @@ def daemon():
 QUEUE = f"{BASE}/queue"
 
 
-def _is_dup_title(con, title, hours=72):
-    """최근 게시 제목과 같은 사건인가 — 보내기 직전 마지막 확인용."""
+def _is_dup_title(con, title, hours=36):
+    """최근 게시 제목과 같은 사건인가 — 보내기 직전 마지막 확인용.
+
+    주의: same_event 의 마지막 규칙(희귀 토큰 2개 겹침)은 df 가 있어야 동작한다.
+    df 없이 부르면 모든 토큰이 '희귀'가 되어 **두 단어만 겹쳐도 중복**이 된다
+    (2026-11-14 실측: 이 버그로 dup 차단이 시간당 178건, 게시가 8건/h → 3건/h 로 주저앉았다).
+    """
     if not title:
         return False
     cutoff = (now_utc() - dt.timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M UTC")
     rows = [t for (t,) in con.execute(
         """SELECT title FROM items WHERE posted=1 AND posted_at>=?
            ORDER BY posted_at DESC LIMIT 400""", (cutoff,))]
-    return any(similar(title, t) > 0.45 or same_event(title, t, {}) for t in rows)
+    df = df_map(con)
+    return any(similar(title, t) > 0.45 or same_event(title, t, df) for t in rows)
 
 
 def make_draft(con, cfg):
