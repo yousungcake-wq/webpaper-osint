@@ -91,6 +91,7 @@ SPORT = re.compile(
     r"athletics|grand prix|formula one|motor racing|nascar|indycar|motogp|"
     r"wrc|rally championship|rallycross|"      # 2026-11-12: 맨 'rally' 는 stocks rally·정치 집회를 잡는다
     r"tennis|golf|boxing|"
+    r"referee|match official|linesman|"        # 2026-11-15 👎 #1409 (심판 칭찬 기사)
     r"fifa|caf|uefa|ioc)\b")
 
 RELIGION_LIFE = re.compile(
@@ -129,6 +130,32 @@ def market_wrap(title):
     return bool(MARKET_WRAP.search(title or ""))
 
 
+# ── 나이지리아 내수 정치 (2026-11-15 👎 #1429 #1413 #819 #736) ─────────────
+# 사건이 아니라 인사·당의 발언·반박·전망만 있는 기사다. 비트 분류가 이걸 CONFLICT 로
+# 주는 바람에(호송대 투석 '부인') '아프리카는 분쟁만'(2026-11-10 지시) 게이트를 그대로
+# 통과했다. 게시 999건에 재 보니 이 규칙은 14건(1.4%)을 잡고, 잡힌 14건이 전부 같은
+# 유형이었다 — 나이지리아 인명·당명 + 발언 동사, 단 단단한 사건(사망·습격·폭격)이 없는 글.
+NG_NAME = re.compile(
+    r"(?i)\b(tinubu|atiku|amaechi|shettima|buhari|uzodimma|segalink|kalu|"
+    r"apc|pdp|inec|nass|reps aspirant|adc)\b")
+NG_SPEECH = re.compile(
+    r"(?i)\b(denies|denied|flays|faults|hails|lauds|condemns|rejects|insists?|"
+    r"tells?|urges?|warns?|speaks?|lists?|vows?|can win|will win|reelection|"
+    r"re-election|aspirant|turbaning|campaign promises|soundbites|rally|stalwarts?)\b")
+NG_HARD_EVENT = re.compile(
+    r"(?i)\b(killed|killings?|dead|death toll|massacre|gunmen|airstrikes?|bomb\w*|"
+    r"kidnap\w*|abduct\w*|hostage\w*|famine|displaced|troops|insurgents?|"
+    r"militants?|bandits?|boko haram|ceasefire|coup)\b")
+
+
+def nigeria_politics(title):
+    """나이지리아 내수 정치 발언 기사인가 — '아프리카는 분쟁만' 지시의 빗나간 구멍."""
+    t = title or ""
+    if not NG_NAME.search(t) or not NG_SPEECH.search(t):
+        return False
+    return not NG_HARD_EVENT.search(t)
+
+
 def topic_block(title):
     """주제 자체가 뉴스 가치 없는 것(스포츠·종교·생활·홍보/의례)이면 이유 문자열."""
     t = title or ""
@@ -138,6 +165,8 @@ def topic_block(title):
         return "life"
     if CSR_PROMO.search(t):
         return "promo"
+    if nigeria_politics(t):
+        return "ngpolitics"
     return None
 
 def is_digest(title, url):
