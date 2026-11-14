@@ -91,6 +91,7 @@ SPORT = re.compile(
     r"athletics|grand prix|formula one|motor racing|nascar|indycar|motogp|"
     r"wrc|rally championship|rallycross|"      # 2026-11-12: 맨 'rally' 는 stocks rally·정치 집회를 잡는다
     r"tennis|golf|boxing|"
+    r"football|soccer|midfielder|striker|goalkeeper|fixture|"  # 2026-11-15: 1001건 중 0 오탐
     r"referee|match official|linesman|"        # 2026-11-15 👎 #1409 (심판 칭찬 기사)
     r"fifa|caf|uefa|ioc)\b")
 
