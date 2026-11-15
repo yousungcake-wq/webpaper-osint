@@ -595,6 +595,28 @@ def story_penalty(heat, title, cap=ENTITY_CAP, pen=ENTITY_PEN):
     return 0.0
 
 
+# 아프리카는 '분쟁'만 (사용자 지시 2026-11-10, 2026-11-15 강화).
+# 왜 강화했나: 비트 라벨(CONFLICT)만 보면 나이지리아 내수 정치가 'displaced·violence'
+# 같은 단어 때문에 CONFLICT 로 분류돼 그대로 통과했다. 실측(11-14~15 게시 22건 중 14건).
+# → 비트가 아니라 **제목의 증거**로 판단한다. 단 UN·AU·협상·조약 같은 국제 외교 사안은 남긴다.
+AFRICA_HARD = re.compile(
+    r"(?i)\b(kill\w*|dead|death\w*|airstrike\w*|air strike\w*|shelling|militant\w*|"
+    r"insurgent\w*|troop\w*|army|siege|ambush\w*|attack\w*|offensive|clash\w*|bomb\w*|"
+    r"massacre\w*|hostage\w*|coup|junta|rebel\w*|gunmen|shoot\w*|wounded|casualt\w*|"
+    r"ceasefire|frontline|drone\w*|al-?shabaab|boko haram|iswap|rsf|m23|jihad\w*|"
+    r"terror\w*|al-?qaeda|isis)")
+AFRICA_DIPLO = re.compile(
+    r"(?i)\b(un|u\.n\.|african union|\bau\b|talk\w*|deal\w*|treaty|treaties|summit\w*|"
+    r"mediat\w*|peacekeep\w*|envoy|sanction\w*|condemn\w*|accord\w*|agree\w*|"
+    r"border\w*|refugee\w*|expel\w*|expulsion\w*|deport\w*)")
+
+
+def africa_ok(title):
+    """아프리카 기사 중 남길 것인가 — 분쟁의 증거 또는 국제 외교 사안."""
+    t = title or ""
+    return bool(AFRICA_HARD.search(t) or AFRICA_DIPLO.search(t))
+
+
 def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     """후보 검증(구글뉴스 해석·정크·만료·중복).
 
@@ -631,13 +653,13 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     # 주의: run_once.install_loose_pick 은 8컬럼(id..score)만 넘긴다 — 인덱싱은 방어적으로
     beat = r[8] if len(r) > 8 else ""
     region = (r[9] if len(r) > 9 and r[9] else None) or beats.kw_region(title)
-    if region == "AFRICA" and beat != "CONFLICT":
+    if region == "AFRICA" and not africa_ok(title):
         con.execute("UPDATE items SET posted=1, note='africa_non_conflict' WHERE id=?", (_id,))
         con.commit()
         log(f"africa_non_conflict: {title[:50]}")
         return None
     # 지역 라벨이 틀린 경우(나이지리아 기사가 ASIA/US 로 분류)를 매체로 잡는다
-    if feed in AFRICA_FEEDS and beat != "CONFLICT":
+    if feed in AFRICA_FEEDS and not africa_ok(title):
         con.execute("UPDATE items SET posted=1, note='africa_feed_non_conflict' WHERE id=?", (_id,))
         con.commit()
         log(f"africa_feed_non_conflict: {title[:50]}")

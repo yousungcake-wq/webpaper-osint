@@ -116,6 +116,15 @@ check("study_rule", filters.is_digest("Study finds coffee linked to longer life"
 check("spread_dedupe_window", osint.same_event(
     "Jensen Huang resigns as Nvidia CEO after mounting scandals",
     "Exclusive: US DOJ probes Nvidia as fallout from Huang's resignation ripples", {}), True)
+# 아프리카는 분쟁·국제외교만 (2026-11-15 강화)
+check("africa_local_blocked", osint.africa_ok(
+    "Governor's aide flays Amaechi over posture at emir's palace"), False)
+check("africa_conflict_kept", osint.africa_ok(
+    "Gunmen Kill at Least 38 in Ambush on Market Convoy in Western Nigeria"), True)
+check("africa_diplo_kept", osint.africa_ok(
+    "Sahel Alliance Condemns Guinea Mass Expulsions of African Nationals"), True)
+check("africa_aid_blocked", osint.africa_ok(
+    "Sudan: Misery worsens amid plummeting aid for displaced people"), False)
 check("last_gate_passes_unknown", osint.form_gate_item(con, 1, "G7 foreign ministers say"), True)
 
 # ── 4. 사건 예산 ─────────────────────────────────────────────────────
