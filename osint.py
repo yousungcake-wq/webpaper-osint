@@ -738,10 +738,13 @@ def form_gate_item(con, item_id, title, descr=""):
     form, util = row
     if form is None:
         lab = None
-        try:
-            lab = _bs.classify_one(title)
-        except Exception:
-            lab = None
+        for _try in (1, 2):          # 실패하면 한 번 더 (무료 한도 경합으로 자주 빈다)
+            try:
+                lab = _bs.classify_one(title)
+            except Exception:
+                lab = None
+            if lab:
+                break
         if lab:
             form, util = lab[2], lab[3]
             con.execute("""UPDATE items SET beat=?, beat_src='llm', region=?, form=?, util=?
