@@ -626,7 +626,7 @@ AFRICA_HARD = re.compile(
     r"ceasefire|frontline|drone\w*|al-?shabaab|boko haram|iswap|rsf|m23|jihad\w*|"
     r"terror\w*|al-?qaeda|isis)")
 AFRICA_DIPLO = re.compile(
-    r"(?i)\b(un|u\.n\.|african union|\bau\b|talk\w*|deal\w*|treaty|treaties|summit\w*|"
+    r"(?i)(\bun\b|\bu\.n\.|african union|\bau\b|talk\w*|deal\w*|treaty|treaties|summit\w*|"
     r"mediat\w*|peacekeep\w*|envoy|sanction\w*|condemn\w*|accord\w*|agree\w*|"
     r"border\w*|refugee\w*|expel\w*|expulsion\w*|deport\w*)")
 

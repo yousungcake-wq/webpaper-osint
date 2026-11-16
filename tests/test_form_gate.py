@@ -123,6 +123,10 @@ check("africa_conflict_kept", osint.africa_ok(
     "Gunmen Kill at Least 38 in Ambush on Market Convoy in Western Nigeria"), True)
 check("africa_diplo_kept", osint.africa_ok(
     "Sahel Alliance Condemns Guinea Mass Expulsions of African Nationals"), True)
+check("africa_uncle_not_un", osint.africa_ok(
+    "Zimbabwe: Police Report Clears Job Sikhala and His Uncle in Insurgency Case"), False)
+check("africa_un_kept", osint.africa_ok(
+    "UN peacekeepers killed by militia in eastern Congo"), True)
 check("africa_aid_blocked", osint.africa_ok(
     "Sudan: Misery worsens amid plummeting aid for displaced people"), False)
 # 시장 사건 예외 (2026-11-16): 주가 등락은 버리되 신용·금리 사건은 남긴다
