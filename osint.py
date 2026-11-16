@@ -560,7 +560,8 @@ AFRICA_FEEDS = {
 # 그래서 사건의 고유명사 등장 빈도를 세어, 24시간에 3건 넘게 나간 이야기를
 # **균형 레인에서만** 감점한다. 우선 레인(HOT_Z)은 그대로 둔다 — 새 국면이면
 # 중요도로 뚫고 나가야 한다(이란 호르무즈 공격 같은 것).
-ENTITY_CAP = 3
+ENTITY_CAP = 3            # 사건 예산: 이 건수를 넘으면 아래 레인에서 감점/차단
+SAGA_CAP = 6              # 하루에 같은 이야기 몇 건까지 허용할 것인가(사용자 2026-11-16)
 ENTITY_PEN = 8.0
 _STORY_STOP = {"the", "this", "that", "why", "what", "how", "after", "before", "new",
                "more", "says", "said", "amid", "with", "from", "into", "over", "their",
@@ -587,12 +588,31 @@ def story_heat(con, hours=24):
     return cnt
 
 
+# 국가·분쟁지역은 '이야기'가 아니라 '무대'다. 전쟁은 하루에 여러 사건이 나온다.
+# 반면 한 기업·한 인물의 스캔들은 각도만 바뀐 같은 이야기다 — 상한을 다르게 둔다.
+COUNTRY_HINTS = {
+    "iran", "israel", "gaza", "china", "russia", "ukraine", "america", "saudi", "yemen",
+    "sudan", "syria", "lebanon", "turkey", "türkiye", "india", "pakistan", "japan",
+    "korea", "taiwan", "venezuela", "nigeria", "ethiopia", "somalia", "mali", "congo",
+    "haiti", "mexico", "brazil", "argentina", "europe", "nato", "asean", "kashmir",
+}
+
+
 def story_penalty(heat, title, cap=ENTITY_CAP, pen=ENTITY_PEN):
     """이미 상한을 넘긴 이야기면 감점. 여러 개가 걸려도 한 번만."""
     for w in story_tokens(title):
         if heat.get(w, 0) >= cap:
             return pen
     return 0.0
+
+
+def saga_blocked(heat, title, cap=SAGA_CAP, country_cap=12):
+    """사건 예산 초과 — 차단. 기업·인물은 cap, 국가·분쟁지는 country_cap."""
+    for w in story_tokens(title):
+        limit = country_cap if w in COUNTRY_HINTS else cap
+        if heat.get(w, 0) >= limit:
+            return True
+    return False
 
 
 # 아프리카는 '분쟁'만 (사용자 지시 2026-11-10, 2026-11-15 강화).
@@ -682,7 +702,7 @@ def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
     import beats as _bs
     form = r[10] if len(r) > 10 else None
     util = r[11] if len(r) > 11 else None
-    if _bs.drop_form(form, util):
+    if _bs.drop_form(form, util, title=title):
         con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", _id))
         con.commit()
         log(f"form: {form} util={util} {title[:50]}")
@@ -727,7 +747,7 @@ def form_gate_item(con, item_id, title, descr=""):
             con.execute("""UPDATE items SET beat=?, beat_src='llm', region=?, form=?, util=?
                            WHERE id=?""", (lab[0] or "", lab[1] or "", form, util, item_id))
             con.commit()
-    if _bs.drop_form(form, util):
+    if _bs.drop_form(form, util, title=title):
         con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", item_id))
         con.commit()
         log(f"form: {form} util={util} {title[:50]}")
@@ -800,9 +820,9 @@ def pick(con, cfg):
             break
         if recent_c.get(b, 0) >= 3:          # 같은 비트가 최근 5건 중 3건 이상이면 우선 레인 금지
             continue
-        # 같은 사건이 24시간에 6건 넘게 나갔으면 우선 레인에서도 막는다.
+        # 같은 사건이 24시간에 10건 넘게 나갔으면 우선 레인에서도 막는다.
         # (2026-11-13: 엔비디아·젠슨 황이 42시간에 63건. 새 국면이면 z 가 더 높다.)
-        if story_penalty(hot_heat, r[1], cap=6) > 0:
+        if saga_blocked(hot_heat, r[1], cap=SAGA_CAP + 4, country_cap=16):
             continue
         real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
         if real:
@@ -831,6 +851,11 @@ def pick(con, cfg):
         best[b] = rows[:4]           # 1등이 막히면(만료·중복·형식) 다음 후보로 넘어간다
     for b, _deficit in _b.beat_deficits(con):
         for z, _b2, r, reg in best.get(b, []):
+            # 같은 이야기가 하루 SAGA_CAP 건을 넘었으면 이 레인에서는 건너뛴다.
+            # (감점만 하면 그 비트에 다른 후보가 없을 때 그대로 뽑힌다 — 2026-11-16 실측:
+            #  엔비디아·젠슨 황이 24시간에 33건, 그중 절반이 '또 그 이야기'였다)
+            if saga_blocked(heat, r[1]):
+                continue
             real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
             if not real:
                 continue

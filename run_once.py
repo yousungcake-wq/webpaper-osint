@@ -323,6 +323,9 @@ def install_loose_pick():
 
         def usable(r):
             title = r[1] or ""
+            # 같은 이야기가 하루 SAGA_CAP 건을 넘었으면 안전망에서도 건너뛴다.
+            if osint.saga_blocked(heat, title):
+                return False
             if (r[7] or 0) < cfg["min_score"] + 3:
                 return False
             if (osint.PRICE_LIST.search(title) or osint.LOW_VALUE.search(title)
@@ -363,17 +366,26 @@ def install_loose_pick():
                     print(f"pick(3차·{b} 최근{counts.get(b, 0)}건): {r[7]:.1f} {r[1][:50]}")
                     return got
 
-        # 4차: 점수 상위
+        # 4차: 점수 상위 — 사건 상한을 지키는 후보를 먼저, 그래도 없으면 마지막 수단으로
+        # 사건 상한을 푼 후보까지 본다(채널이 조용해지는 것보다는 낫다).
         rows = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util
-                FROM items WHERE posted=0 ORDER BY score DESC LIMIT 40""").fetchall()
+                FROM items WHERE posted=0 ORDER BY score DESC LIMIT 60""").fetchall()
         rows.sort(key=lambda r: -((r[7] or 0) - osint.story_penalty(heat, r[1])))
-        for r in rows:
-            if not usable(r):
-                continue
-            got = take(r)
-            if got:
-                print(f"pick(4차·점수): {r[7]:.1f} form={r[10]} util={r[11]} {r[1][:50]}")
-                return got
+        for relax in (False, True):
+            for r in rows:
+                if relax:
+                    if (r[7] or 0) < cfg["min_score"] + 6:
+                        continue
+                    ok = (r[11] is None or (r[10] or "NEWS") == "NEWS" or r[11] >= 5)
+                    if not ok:
+                        continue
+                elif not usable(r):
+                    continue
+                got = take(r)
+                if got:
+                    print(f"pick(4차{'·완화' if relax else ''}·점수): {r[7]:.1f} "
+                          f"form={r[10]} util={r[11]} {r[1][:50]}")
+                    return got
         con.commit()
         return None
 

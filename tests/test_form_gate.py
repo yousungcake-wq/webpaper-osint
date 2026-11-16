@@ -125,6 +125,15 @@ check("africa_diplo_kept", osint.africa_ok(
     "Sahel Alliance Condemns Guinea Mass Expulsions of African Nationals"), True)
 check("africa_aid_blocked", osint.africa_ok(
     "Sudan: Misery worsens amid plummeting aid for displaced people"), False)
+# 시장 사건 예외 (2026-11-16): 주가 등락은 버리되 신용·금리 사건은 남긴다
+check("credit_stress_kept", beats.drop_form(
+    "MARKET", 7, title="CoreWeave bond yields breach 16% as AI credit fears spread"), False)
+check("credit_noise_blocked", beats.drop_form(
+    "MARKET", 6, title="US tech stocks set to extend rebound"), True)
+check("credit_low_util_blocked", beats.drop_form(
+    "MARKET", 5, title="CoreWeave bond yields breach 16%"), True)
+check("saga_blocked_after_cap", osint.story_penalty({"nvidia": 7}, "Nvidia board meets again",
+                                                   cap=osint.SAGA_CAP) > 0, True)
 check("last_gate_passes_unknown", osint.form_gate_item(con, 1, "G7 foreign ministers say"), True)
 
 # ── 4. 사건 예산 ─────────────────────────────────────────────────────

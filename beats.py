@@ -37,12 +37,16 @@ FORM_KO = {"NEWS": "사건", "MARKET": "시황", "PROMO": "홍보", "FORECAST": 
 # 오피니언으로 사용자가 싫어한 유형). MARKET 8 은 '사실상 항상 버림'이다 —
 # 진짜 시장 사건은 모델이 NEWS 로 태깅한다. LOCAL 3·REPORT 3 은 낮게 뒀다:
 # 높이면 이스라엘 의회·콩고 국민투표·ISW 전황보고 같은 실제 뉴스가 함께 죽는다.
+CREDIT_STRESS = re.compile(
+    r"(?i)\b(bonds?|treasury|yields?|spreads?|credit|default|downgrade\w*|debt|"
+    r"insolven\w*|bankrupt\w*|liquidity|margin call|junk)\b")
+
 FORM_MIN = {"NEWS": 2, "MARKET": 8, "PROMO": 6, "FORECAST": 5, "LOCAL": 4,
             "REPORT": 3, "LIFE": 5, "STUDY": 99}   # STUDY 는 항상 버린다(사용자 지시)
 FORM_MIN_UTILITY = 4          # 형식 미상일 때 쓰는 기본값(하위 호환)
 
 
-def drop_form(form, util, min_utility=None):
+def drop_form(form, util, min_utility=None, title=""):
     """형식 판정으로 버릴 기사인가 (2026-11-12).
 
     유용도를 못 받았으면(구형 3필드 응답·LLM 실패) 판단하지 않는다 — 그때는
@@ -57,6 +61,10 @@ def drop_form(form, util, min_utility=None):
     f = (form or "NEWS").upper()
     if f not in FORM_MIN:
         f = "NEWS"
+    # MARKET 이라도 채권·신용의 움직임은 '시장 사건'이다 — 주가 등락과 같이 버리면 안 된다.
+    # (2026-11-16 사용자: "CoreWeave 채권 수익률 16% 돌파, AI 신용 불안" 같은 뉴스도 있고 좋겠다)
+    if f == "MARKET" and u >= 6 and CREDIT_STRESS.search(title or ""):
+        return False
     thr = FORM_MIN[f] if min_utility is None else min_utility
     return u < thr
 
@@ -242,7 +250,9 @@ PROMPT = """다음 뉴스 제목을 분류해라. 설명 없이 "번호:비트:�
 
 형식 — **무엇에 관한 기사인가가 아니라 어떤 종류의 글인가**를 본다. 주제가 경제여도 시황이면 MARKET 이다.
 - NEWS: 사건·발표·결정·조치가 있다. (공습, 제재, 금리 결정, 인선, 사고, 기업 인수, 규제 발표)
-- MARKET: 일상적 시세·지수 등락·개별 종목 등락·종목 추천·"stock market today"·시황 중계·수익률 표.
+- MARKET: **일상적 등락만** — 지수 ±1%, 개별 종목 시세, 종목 추천, "stock market today", 시황 중계.
+  단 **채권 금리·신용 스프레드·부도·유동성**의 움직임은 시황이 아니라 **금융 사건**이다 → NEWS.
+  (예: "CoreWeave 채권 수익률 16% 돌파, AI 신용 불안" 은 NEWS/8 이다. 주가 등락이 아니다.)
 - PROMO: 보도자료 — 행사 개최/확장, 수상, MOU, 기념식, 기관 홍보, 신제품 광고.
 - FORECAST: 사건 없이 전망·예측·"~할 수 있다"·"~할까?"·애널리스트 의견만 있는 글.
 - LOCAL: **하위 단위**의 정치 — 주·시·카운티·지방선거, 지방법원·경찰·교육위, 지방 행사.
@@ -352,6 +362,7 @@ ONE_PROMPT = """제목 하나를 분류해라. "비트:지역:형식:유용도" 
 9-10 여러 나라 구도가 바뀐다 / 7-8 국가 수준 결정인데 다른 나라도 주목 / 5-6 업계·지역 사실
 / 3-4 그 나라 안에서만 통하는 정치·사법·인사·지방선거·일상 시황 / 0-2 홍보·소문·조언·목록
 MARKET·PROMO·REPORT·LIFE 형식이면 3 이하. 주·시·카운티·지방선거는 LOCAL, 3 이하.
+채권 금리·신용 스프레드·부도·유동성의 움직임은 시황이 아니라 금융 사건 → NEWS, 6 이상.
 (시장 붕괴·금리 결정·제재 같은 사건은 NEWS)
 국가 단위 정치(미국 연방·유럽 각국 정부)는 NEWS. 기술·AI 모델 출시·안전성 논쟁도 NEWS, 7 이상.
 제목: {title}"""
