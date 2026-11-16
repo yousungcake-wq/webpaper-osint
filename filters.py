@@ -58,7 +58,7 @@ CELEB = re.compile(
 
 # 자연현상·영상 클립 — 사건이 아니라 화면 (재난 사망자가 있으면 NEWS 로 남는다)
 SOFT_VIDEO = re.compile(
-    r"(?i)(^\s*watch\s*:|ash emission|volcanic smog|caught on camera|dramatic (video|footage)|"
+    r"(?i)(^\s*(watch|look)\s*:|ash emission|volcanic smog|caught on camera|dramatic (video|footage)|"
     r"in pictures|photo(s)? of the (day|week))")
 
 # 뉴스가 아닌 글 — 조언 칼럼·영화 시상·시황 요약·미리보기 목록 (2026-11-13 실측 4/4 정확)

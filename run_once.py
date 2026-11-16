@@ -374,7 +374,7 @@ def install_loose_pick():
         for relax in (False, True):
             for r in rows:
                 if relax:
-                    if (r[7] or 0) < cfg["min_score"] + 6:
+                    if (r[7] or 0) < cfg["min_score"] + 3:
                         continue
                     ok = (r[11] is None or (r[10] or "NEWS") == "NEWS" or r[11] >= 5)
                     if not ok:
