@@ -24,7 +24,7 @@ from urllib.parse import urlsplit
 # 한 페이지가 여러 사건을 담는 글 (라운드업·브리핑·속보 블로그)
 ROUNDUP_TITLE = re.compile(
     r"(?i)("
-    r"daily brief|the big read|morning brief|evening brief|midday brief|"
+    r"daily[ _-]?brief|the big read|morning brief|evening brief|midday brief|"
     r"what to know|things to know|as it happened|live blog|live updates?|"
     r"\blive\s*[:\u2013-]|"                     # "Cop31 live: …" (2026-11-10 👎 #741)
     r"latest updates|markets? wrap|market wrap|closing bell|opening bell|"
@@ -50,6 +50,16 @@ OPINION_TITLE = re.compile(
 ESSAY = re.compile(
     r"(?i)(\bop-?ed\b|\bcommentary\b|\bcritique\b|\bessay\b|\bcolumn\b|"
     r"\bviewpoint\b|\bperspective\b|\bthe big picture\b|\bpodcast\b|\btranscript\b)")
+
+# 연예·왕실 — 국제 뉴스가 아니다 (2026-11-16 실측: Prince Harry·Pope 기사가 NEWS 로 통과)
+CELEB = re.compile(
+    r"(?i)(prince harry|prince william|princess|duchess|meghan|kate middleton|"
+    r"royal family|buckingham|celebrity|red carpet|k-pop idol)")
+
+# 자연현상·영상 클립 — 사건이 아니라 화면 (재난 사망자가 있으면 NEWS 로 남는다)
+SOFT_VIDEO = re.compile(
+    r"(?i)(^\s*watch\s*:|ash emission|volcanic smog|caught on camera|dramatic (video|footage)|"
+    r"in pictures|photo(s)? of the (day|week))")
 
 # 뉴스가 아닌 글 — 조언 칼럼·영화 시상·시황 요약·미리보기 목록 (2026-11-13 실측 4/4 정확)
 NONNEWS = re.compile(
@@ -96,7 +106,7 @@ SPORT = re.compile(
     r"fifa|caf|uefa|ioc)\b")
 
 RELIGION_LIFE = re.compile(
-    r"(?i)\b(church|cathedral|pastor|bishop|diocese|congregation|ministry\b(?! of)|"
+    r"(?i)\b(pope|papal|vatican|church|cathedral|pastor|bishop|diocese|congregation|ministry\b(?! of)|"
     r"mosque|imam|rabbi|temple|anniversary|celebrates? \d+|wedding|funeral|"
     r"beauty pageant|miss world|reality show|box office|celebrity gossi?p)\b")
 
@@ -184,6 +194,10 @@ def is_digest(title, url):
         return "opinion"
     if NONNEWS.search(t):
         return "nonnews"
+    if CELEB.search(t):
+        return "life"
+    if SOFT_VIDEO.search(t):
+        return "video"
     if STUDY.search(t):
         return "study"
     if OPINION_TITLE.search(t) and len(t) < 220:
