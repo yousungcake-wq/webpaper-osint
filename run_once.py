@@ -141,8 +141,9 @@ def append_state(d, con, row_id):
     state/posts/<날짜>/<시각>-<키>.jsonl — 회차가 겹쳐도 같은 파일을 건드리지 않는다.
     요약문(x)과 정규화 주소(cu)도 같이 남긴다. 다음 회차의 중복 판정 재료다.
     """
-    r = con.execute("SELECT beat, region, key, cat, summary, cu, form, util FROM items"
-                    " WHERE id=?", (row_id,)).fetchone() or _Posted()
+    row = con.execute("SELECT beat, region, key, cat, summary, cu, form, util FROM items"
+                      " WHERE id=?", (row_id,)).fetchone()
+    r = _Posted(*row) if row else _Posted()     # fetchone() 은 맨 튜플 → 이름을 붙인다
     beat = r.beat or beats.kw_beat(d.get("title", ""), d.get("cat", ""))
     region = r.region or beats.kw_region(d.get("title", ""))
     now = osint.now_utc()
