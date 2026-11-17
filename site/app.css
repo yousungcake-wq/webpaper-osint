@@ -1,0 +1,99 @@
+/* app.css — index.html 과 search.html 이 **함께** 쓰는 것만 모은 파일.
+   2026-11-17: 두 페이지가 같은 CSS 를 각자 <style> 로 갖고 있었고, 그래서
+   kst()·openSheet 처럼 스타일도 서서히 어긋났다(카드 클래스 이름부터 달랐다).
+   페이지 고유 스타일은 각 HTML 의 <style> 에 남긴다. 이 파일은 "두 쪽에서 똑같아야
+   하는 것"의 목록이다 — 여기 없는 것을 얹으면 다시 갈라진다. */
+
+:root{
+  --bg:#fff; --fg:#191919; --muted:#6b6b6b; --line:#ececec; --chip:#f2f4f6;
+  --accent:#3182f6; --beatsel:#191919; --beatsel-fg:#fff;
+  --t-tech:#3182f6; --t-economy:#0e9f6e; --t-conflict:#e02424; --t-politics:#7c3aed; --t-other:#8b95a1;
+  --font-base:16px; --font-summary:15px; --font-caption:13px;
+  --lh:1.6; --radius:16px; --maxw:640px; --tap:44px;
+  --safe-b:env(safe-area-inset-bottom,0px); --pad:16px;
+}
+:root[data-theme="dark"]{
+  --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
+  --accent:#4f9bff; --beatsel:#f0f1f3; --beatsel-fg:#101114;
+  --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#a78bfa; --t-other:#7d8794;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#101114; --fg:#f0f1f3; --muted:#9aa0a6; --line:#26282d; --chip:#1c1e23;
+    --accent:#4f9bff; --beatsel:#f0f1f3; --beatsel-fg:#101114;
+    --t-tech:#6aa9ff; --t-economy:#34d399; --t-conflict:#f87171; --t-politics:#a78bfa; --t-other:#7d8794;
+  }
+}
+
+/* ── 분야 칩 ───────────────────────────────────────── */
+.chip{flex:0 0 auto;min-height:34px;padding:0 14px;border:0;border-radius:17px;background:var(--chip);
+  color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer;
+  transition:background .12s,color .12s;-webkit-tap-highlight-color:transparent}
+.chip[aria-pressed="true"]{background:var(--beatsel);color:var(--beatsel-fg)}
+.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* ── 분야 배지 ─────────────────────────────────────── */
+.beat{font-size:11px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:6px;
+  color:var(--c,var(--muted));background:color-mix(in srgb,var(--c,var(--muted)) 12%,transparent);flex:0 0 auto}
+.beat[data-beat="TECH"]{--c:var(--t-tech)}
+.beat[data-beat="ECONOMY"]{--c:var(--t-economy)}
+.beat[data-beat="CONFLICT"]{--c:var(--t-conflict)}
+.beat[data-beat="POLITICS"]{--c:var(--t-politics)}
+.beat[data-beat="OTHER"]{--c:var(--t-other)}
+
+/* ── 기사 카드 (두 페이지가 같은 마크업을 쓴다) ──────── */
+.card{display:block;min-width:0;max-width:100%;overflow:hidden;padding:16px;border:1px solid var(--line);
+  border-radius:var(--radius);background:var(--bg);color:inherit;text-decoration:none;
+  cursor:pointer;transition:background .12s,border-color .12s;-webkit-tap-highlight-color:transparent;
+  content-visibility:auto;contain-intrinsic-size:auto 132px}
+.card:hover{border-color:color-mix(in srgb,var(--fg) 16%,var(--line))}
+.card:active{background:var(--chip)}
+.card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.card__meta{display:flex;align-items:center;gap:7px;margin-bottom:8px;min-width:0}
+.card__where{font-size:var(--font-caption);color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;flex:1 1 auto;min-width:0}
+.card__time{font-size:var(--font-caption);color:var(--muted);white-space:nowrap;flex:0 0 auto;
+  font-variant-numeric:tabular-nums}
+.card__title{font-size:var(--font-base);font-weight:700;line-height:1.45;margin:0 0 6px;letter-spacing:-.01em;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card__title[lang="en"]{font-size:15px;font-weight:650}
+.card__summary{font-size:var(--font-summary);color:var(--muted);line-height:1.55;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card__summary:empty{display:none}
+mark{padding:0 1px;border-radius:2px;background:color-mix(in srgb,var(--accent) 22%,transparent);
+  color:inherit;font-weight:600}
+
+/* ── 더 보기 ───────────────────────────────────────── */
+.more{display:grid;place-items:center;padding:4px 0 18px}
+.more button{min-height:44px;padding:0 22px;border:1px solid var(--line);border-radius:22px;background:var(--bg);
+  color:var(--muted);font:inherit;font-size:var(--font-caption);cursor:pointer}
+
+/* ── 기사 상세 시트 ─────────────────────────────────── */
+.sheet{position:fixed;inset:auto 0 0 0;margin:0 auto;width:100%;max-width:var(--maxw);border:0;padding:0;
+  border-radius:20px 20px 0 0;background:var(--bg);color:var(--fg);max-height:86dvh;
+  box-shadow:0 -6px 24px rgba(0,0,0,.16);transform:translateY(100%);
+  transition:transform .26s cubic-bezier(.2,.8,.2,1)}
+.sheet.is-open{transform:translateY(0)}
+.sheet::backdrop{background:rgba(0,0,0,.4)}
+.sheet__inner{padding:8px 20px calc(24px + env(safe-area-inset-bottom));max-height:86dvh;
+  overflow-y:auto;overscroll-behavior:contain}
+.sheet__grip{width:36px;height:4px;border-radius:2px;background:var(--line);margin:0 auto 14px}
+.sheet__meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.sheet__when{font-size:var(--font-caption);color:var(--muted)}
+.sheet__title{font-size:20px;font-weight:750;line-height:1.4;margin-bottom:4px;letter-spacing:-.01em}
+.sheet__orig{font-size:var(--font-caption);color:var(--muted);margin-bottom:14px;padding-bottom:14px;
+  border-bottom:1px solid var(--line)}
+.sheet__orig:empty{display:none}
+.sheet__body{font-size:var(--font-summary);line-height:1.7;white-space:pre-wrap}
+.sheet__body:empty{display:none}
+.sheet__src{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:4px}
+.sheet__src:empty{display:none}
+.sheet__src li{font-size:var(--font-caption);color:var(--muted)}
+.sheet__src li::before{content:"· ";font-weight:700}
+.sheet__cta{display:flex;align-items:center;justify-content:center;margin-top:18px;min-height:var(--tap);
+  border-radius:12px;background:var(--accent);color:#fff;text-decoration:none;font-weight:700;
+  font-size:var(--font-summary)}
+.sheet__cta[hidden]{display:none}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}

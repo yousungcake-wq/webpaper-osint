@@ -4,8 +4,9 @@
   python3 tools/sim_pick.py
 
 왜 필요한가: `tests/` 는 게이트 규칙을 고정하지만 **선택 경로 전체**(후보 조회 →
-게이트 → 안전망 3·4차)는 손대기 어려웠다. 2026-11-17 후보 레코드를 `Cand` 로 바꾸면서
-"SQL 컬럼 순서와 이름이 맞는가"를 눈이 아니라 실행으로 확인하려고 만들었다.
+게이트 → 안전망 3·4차)는 손대기 어려웠다. 2026-11-17 후보 레코드를 `Cand` 로 바꾸고
+안전망을 `pick` 안으로 옮기면서, "SQL 컬럼 순서와 이름이 맞는가"를 눈이 아니라
+실행으로 확인하려고 만들었다.
 """
 import os
 import sys
@@ -37,8 +38,7 @@ def check(name, cond, extra=""):
 
 
 def main():
-    cfg = osint.conf()
-    run_once.install_loose_pick()          # 실제 운영과 같은 함수를 태운다
+    cfg = osint.conf()                     # 안전망 3·4차는 osint.pick 안에 있다 (2026-11-17)
 
     # 1) 정상 후보 → Cand 로 돌아오고 url 이 채워진다
     con = fresh([

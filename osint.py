@@ -870,6 +870,69 @@ def pick(con, cfg):
                 f"{f' story-{pen:.0f}' if pen else ''}")
             return got
     con.commit()
+    return _pick_fallback(con, cfg, df, recent, cutoff_s, heat)
+
+
+# ── 3·4차 안전망 (2026-11-17 osint 안으로 흡수) ─────────────────────────
+# 왜 여기 있나: 균형 배분은 '목표비에서 모자란 비트'가 있어야 후보를 낸다. 5분 주기로
+# 돌면 목표비가 이미 채워져 아무것도 못 고르는 회차가 잦고, 그때 채널이 빈다.
+# 예전에는 이 두 단계가 `run_once.install_loose_pick()` 에 있었고 **osint.pick 을
+# 몽키패치**해서 붙였다. 게이트 규칙이 두 파일에 나뉘어 한쪽만 고쳐지는 상태였다
+# (2026-11-17 확인). 이제 선택 로직은 이 파일 하나에 있다.
+def _fallback_ok(c, cfg):
+    """안전망 후보의 하한. 본선보다 **엄하게** 잡는다(바닥 훑기 방지, 2026-11-12)."""
+    title = c.title or ""
+    if (c.score or 0) < cfg["min_score"] + 3:
+        return False
+    if (PRICE_LIST.search(title) or LOW_VALUE.search(title) or LOW_VALUE_ANY.search(title)
+            or COURTESY.search(title) or NOISE_TITLE.search(title)):
+        return False
+    # 형식이 뉴스가 아니면 유용도 5 이상(본선 기준 4보다 높다)이어야 한다.
+    # 유용도를 모르면 통과시킨다 — 정규식 백스톱이 잡는다.
+    if c.util is not None and (c.form or "NEWS") != "NEWS" and c.util < 5:
+        return False
+    return True
+
+
+def _pick_fallback(con, cfg, df, recent, cutoff_s, heat):
+    """3차(최근 게시가 적은 비트부터) → 4차(점수 상위, 마지막엔 사건 상한도 푼다)."""
+    import beats as _b
+    counts = _b.beat_counts(con, window=12)
+    sql = f"""SELECT {CAND_COLS} FROM items
+            WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8"""
+    for b in sorted(_b.BEATS, key=lambda x: counts.get(x, 0)):
+        cs = [cand(row) for row in con.execute(sql, (b,)).fetchall()]
+        # 같은 이야기가 하루 상한을 넘었으면 뒤로 미룬다(사건 예산, 2026-11-12)
+        cs.sort(key=lambda c: -((c.score or 0) - story_penalty(heat, c.title or "")))
+        for c in cs:
+            if not _fallback_ok(c, cfg):
+                continue
+            got = _candidate_ok(con, c, df, recent, cutoff_s, cfg["min_score"])
+            if got:
+                log(f"pick(3차·{b} 최근{counts.get(b, 0)}건): {(c.score or 0):.1f} "
+                    f"{(c.title or '')[:50]}")
+                return got
+
+    rows = [cand(row) for row in con.execute(
+        f"SELECT {CAND_COLS} FROM items WHERE posted=0 ORDER BY score DESC LIMIT 60").fetchall()]
+    rows.sort(key=lambda c: -((c.score or 0) - story_penalty(heat, c.title or "")))
+    # 사건 상한을 지키는 후보를 먼저, 그래도 없으면 상한을 푼 후보까지 본다
+    # (채널이 조용해지는 것보다는 낫다).
+    for relax in (False, True):
+        for c in rows:
+            if relax:
+                if (c.score or 0) < cfg["min_score"] + 3:
+                    continue
+                if c.util is not None and (c.form or "NEWS") != "NEWS" and c.util < 5:
+                    continue
+            elif not _fallback_ok(c, cfg):
+                continue
+            got = _candidate_ok(con, c, df, recent, cutoff_s, cfg["min_score"])
+            if got:
+                log(f"pick(4차{'·완화' if relax else ''}·점수): {(c.score or 0):.1f} "
+                    f"form={c.form} util={c.util} {(c.title or '')[:50]}")
+                return got
+    con.commit()
     return None
 
 

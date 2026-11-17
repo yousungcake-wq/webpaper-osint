@@ -304,97 +304,6 @@ def save_forms(con):
     return len(rows)
 
 
-def install_loose_pick():
-    """균형 레인이 비었을 때를 위한 3·4차 안전망.
-
-    균형 배분은 '목표비에서 모자란 비트'가 있어야 후보를 낸다. 5분 주기로 돌면
-    목표비가 이미 채워져 있어 아무것도 못 고르는 회차가 잦다(그때 침묵하면 채널이 빈다).
-    그래서 두 단계를 더 둔다.
-      3차 — 최근 게시가 가장 적은 비트부터, 그 비트의 상위 후보
-      4차 — 그래도 없으면 점수 상위에서 품질 하한(최소점수+3)을 넘는 첫 건
-    평상시(1·2차) 동작은 건드리지 않는다.
-    """
-    original = osint.pick
-
-    def pick(con, cfg):
-        got = original(con, cfg)
-        if got:
-            return got
-
-        cutoff_s = (osint.now_utc() - dt.timedelta(hours=cfg["max_age_hours"])).strftime(
-            "%Y-%m-%d %H:%M UTC")
-        _cut = (osint.now_utc() - dt.timedelta(hours=36)).strftime("%Y-%m-%d %H:%M UTC")
-        recent = [t for (t,) in con.execute(
-            "SELECT title FROM items WHERE posted=1 AND posted_at>=? "
-            "ORDER BY posted_at DESC LIMIT 400", (_cut,))]
-        df = osint.df_map(con)
-        heat = osint.story_heat(con)
-
-        def usable(c):
-            title = c.title or ""
-            # 같은 이야기가 하루 SAGA_CAP 건을 넘었으면 안전망에서도 건너뛴다.
-            if osint.saga_blocked(heat, title):
-                return False
-            if (c.score or 0) < cfg["min_score"] + 3:
-                return False
-            if (osint.PRICE_LIST.search(title) or osint.LOW_VALUE.search(title)
-                    or osint.LOW_VALUE_ANY.search(title) or osint.COURTESY.search(title)
-                    or osint.NOISE_TITLE.search(title)):
-                return False
-            # 2026-11-12 '빈 슬롯 허용': 안전망은 **품질이 확실할 때만** 채운다.
-            # 형식이 뉴스가 아니면 유용도 5 이상(본선 기준 4보다 높다)이어야 하고,
-            # 유용도를 모르면 그냥 통과시킨다(정규식 백스톱이 잡는다).
-            if c.util is not None and (c.form or "NEWS") != "NEWS" and c.util < 5:
-                return False
-            return True
-
-        def take(c):
-            got = osint._candidate_ok(con, c, df, recent, cutoff_s, cfg["min_score"])
-            if got:
-                con.commit()
-            return got
-
-        # 3차: 최근 게시가 적은 비트부터
-        counts = beats.beat_counts(con, window=12)
-        sql = f"""SELECT {osint.CAND_COLS} FROM items
-                WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8"""
-        for b in sorted(beats.BEATS, key=lambda x: counts.get(x, 0)):
-            cs = [osint.cand(r) for r in con.execute(sql, (b,)).fetchall()]
-            # 같은 이야기가 하루 상한을 넘었으면 뒤로 미룬다(사건 예산, 2026-11-12)
-            cs.sort(key=lambda c: -((c.score or 0) - osint.story_penalty(heat, c.title or "")))
-            for c in cs:
-                if not usable(c):
-                    continue
-                got = take(c)
-                if got:
-                    print(f"pick(3차·{b} 최근{counts.get(b, 0)}건): {(c.score or 0):.1f} "
-                          f"{(c.title or '')[:50]}")
-                    return got
-
-        # 4차: 점수 상위 — 사건 상한을 지키는 후보를 먼저, 그래도 없으면 마지막 수단으로
-        # 사건 상한을 푼 후보까지 본다(채널이 조용해지는 것보다는 낫다).
-        rows = [osint.cand(r) for r in con.execute(
-            f"SELECT {osint.CAND_COLS} FROM items WHERE posted=0 "
-            "ORDER BY score DESC LIMIT 60").fetchall()]
-        rows.sort(key=lambda c: -((c.score or 0) - osint.story_penalty(heat, c.title or "")))
-        for relax in (False, True):
-            for c in rows:
-                if relax:                   # 완화: 품질 하한과 형식 기준만 남긴다
-                    if (c.score or 0) < cfg["min_score"] + 3:
-                        continue
-                    if c.util is not None and (c.form or "NEWS") != "NEWS" and c.util < 5:
-                        continue
-                elif not usable(c):
-                    continue
-                got = take(c)
-                if got:
-                    print(f"pick(4차{'·완화' if relax else ''}·점수): {(c.score or 0):.1f} "
-                          f"form={c.form} util={c.util} {(c.title or '')[:50]}")
-                    return got
-        con.commit()
-        return None
-
-    osint.pick = pick
 
 
 def _git(args):
@@ -542,7 +451,6 @@ def watchdog():
     sys.exit(1)
 
 def main():
-    install_loose_pick()
     if DRY:
         def fake_send(text, chat=None, html=True):
             print("[DRY RUN] 전송 생략, 본문 미리보기 ↓")

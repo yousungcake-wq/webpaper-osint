@@ -78,7 +78,8 @@ Gram 관심사: **국제분쟁 — 특히 아프리카·중동의 저보도 분�
    목표비 `TECH2·FINANCE2·CONFLICT2·ECONOMY2·COMMODITY1·POLITICS1` /
    지역 `EUROPE3·LATAM2·US2·ASIA2·AFRICA2·MIDDLE_EAST1`.
 3. **z점수** — 비트마다 점수 분포가 달라서 `(score-평균)/표준편차` 로 정규화한다.
-4. **안전망(`install_loose_pick`)** — 균형 레인이 비면 점수 상위 40건에서 필터 통과 첫 건을 쓴다.
+4. **안전망(`osint._pick_fallback`)** — 균형 레인이 비면 3차(최근 게시가 적은 비트) →
+   4차(점수 상위 60건에서 하한 통과분) 순으로 쓴다.
    없으면 후보가 없어 조용히 침묵한다(폰 시절 45분 공백 사고의 원인).
 
 ## 중복 판정 — 4겹 (2026-11-09 강화)
