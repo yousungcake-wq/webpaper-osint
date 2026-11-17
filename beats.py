@@ -13,7 +13,8 @@ import json
 import os
 import re
 import time
-import urllib.request
+
+import httpjson
 
 BEATS = ["TECH", "ECONOMY", "CONFLICT", "POLITICS", "OTHER"]
 # OTHER(기타)도 게시한다 — "명확히 분류되지 않는 국제 뉴스"이지 쓰레기 통이 아니다.
@@ -77,8 +78,7 @@ def norm_beat(b):
     return b if b in BEATS else "OTHER"
 WINDOW = 10                                       # 분포를 볼 최근 게시물 수
 
-UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/122.0 Mobile Safari/537.36")
+UA = httpjson.UA                                  # 같은 UA 를 두 곳에서 관리하지 않는다
 
 # ── 키워드 1차 분류 (LLM 이 실패해도 동작) ──────────────────────────
 KW = {
@@ -282,12 +282,7 @@ NEWS 이고 7 이상. 단 주가·밸류에이션·실적 전망만 있는 글�
 {titles}"""
 
 
-def _post(url, payload, headers, timeout=30):   # 5분 주기 안에 끝나야 한다 (2026-11-08: 90s×폴백이 회차를 5분 이상 물고 있었다)
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "User-Agent": UA, **headers})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+_post = httpjson.post        # 본문·UA·타임아웃 규칙은 httpjson.py 한 곳에 (2026-11-17)
 
 
 GEMINI_CLASSIFY_MODELS = ["gemini-flash-lite-latest", "gemini-3.1-flash-lite",
@@ -557,6 +552,10 @@ MAX_PENALTY = 6.0
 
 def quota_penalty(con, window=WINDOW):
     """이미 많이 나간 비트에 매기는 감점. 중요도가 쿼터에 밀리지 않게 하는 장치.
+
+    ⚠️ 2026-11-17 확인: 지금은 아무도 이 값을 쓰지 않는다. `pick` 이 계산만 하고 버렸고
+    (그 사실이 드러나지 않아 '감점이 적용되는 줄' 오해하기 쉬웠다), 실제 균형은
+    `z_score` + 쿼터(`beat_deficits`)가 만든다. 삭제 후보.
 
     유효점수 = score - penalty.  단 score >= HOT_SCORE 면 penalty 0.
     - 25점 분쟁 vs 12점 테크 → 25 - 6 = 19 > 12  (중요한 뉴스가 이긴다)

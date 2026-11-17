@@ -75,9 +75,11 @@ con.execute("INSERT INTO items(key,title,url,score) VALUES(?,?,?,?)",
 
 
 def gate(form, util, title=TITLE):
-    return osint._candidate_ok(con, (1, title, "", "https://example.com/a", "Feed",
-                                     "economy", "", 20.0, "ECONOMY", "US", form, util),
-                               {}, [], "2000-01-01 00:00 UTC", 11.5)
+    """통과하면 해석된 URL, 막히면 None. (2026-11-17: 반환값이 Cand 로 바뀌었다)"""
+    c = osint.cand((1, title, "", "https://example.com/a", "Feed",
+                    "economy", "", 20.0, "ECONOMY", "US", form, util))
+    got = osint._candidate_ok(con, c, {}, [], "2000-01-01 00:00 UTC", 11.5)
+    return got.url if got else None
 
 
 check("block_market2", gate("MARKET", 2), None)
@@ -139,6 +141,14 @@ check("credit_low_util_blocked", beats.drop_form(
 check("saga_blocked_after_cap", osint.story_penalty({"nvidia": 7}, "Nvidia board meets again",
                                                    cap=osint.SAGA_CAP) > 0, True)
 check("last_gate_passes_unknown", osint.form_gate_item(con, 1, "G7 foreign ministers say"), True)
+
+# 2026-11-17: 거부 표시는 **커밋까지** 한다. 회차가 중간에 죽어도 '차단' 판정이 남아야
+# 다음 회차가 같은 후보를 다시 집어오지 않는다(이전에는 19곳 중 4곳이 커밋을 빠뜨렸다).
+con.execute("UPDATE items SET posted=0, note=NULL, form='MARKET', util=2 WHERE id=1")
+check("reject_blocks_again", gate("MARKET", 2), None)
+check("reject_commits", con.in_transaction, False)
+check("reject_note_kept", con.execute("SELECT note FROM items WHERE id=1").fetchone()[0],
+      "form:MARKET")
 
 # ── 4. 사건 예산 ─────────────────────────────────────────────────────
 heat = {"nvidia": 5, "iran": 1}

@@ -7,7 +7,8 @@
   python3 llm.py --json queue/123.json --dry  # 프롬프트만 확인
 """
 import argparse, json, os, re, sys, time
-import urllib.request
+
+import httpjson
 
 SYSTEM = (
     "너는 국제 뉴스 전문 브리퍼다. 주어진 기사로 한국어 요약을 쓴다.\n"
@@ -94,17 +95,9 @@ def _clean_body(out, thin):
     return out
 
 
-UA = ("Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/122.0 Mobile Safari/537.36")
-
-
-def _post(url, payload, headers, timeout=30):   # 5분 주기 안에 끝나야 한다 (2026-11-08: 90s×폴백이 회차를 5분 이상 물고 있었다)
-    # UA 없이 보내면 Groq(Cerebras 등)가 Cloudflare 1010 으로 403 을 준다.
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "User-Agent": UA, **headers})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode())
+# 본문·UA·타임아웃 규칙은 httpjson.py 한 곳에 있다 (beats.py 와 같은 6줄을 각자 갖고 있었다)
+UA = httpjson.UA
+_post = httpjson.post
 
 
 GEMINI_MODELS = ["gemini-3-flash-preview", "gemini-flash-latest", "gemini-3.1-flash-lite"]
@@ -149,29 +142,29 @@ def call_groq(key, prompt, model=None):
     raise last
 
 
-def call_openrouter(key, prompt, model="google/gemini-2.0-flash-exp:free"):
-    url = "https://openrouter.ai/api/v1/chat/completions"
+def _openai_compat(url, key, prompt, model, extra=None):
+    """OpenAI 호환 chat/completions 한 벌.
+
+    openrouter·cerebras·mistral 은 URL·모델명·헤더 하나만 다른 같은 10줄이었다
+    (2026-11-17 통합). 새 제공자를 붙일 때도 이 함수 하나면 된다.
+    """
     body = {"model": model, "temperature": 0.4, "max_tokens": 700,
             "messages": [{"role": "user", "content": prompt}]}
-    r = _post(url, body, {"Authorization": f"Bearer {key}",
-                          "HTTP-Referer": "https://nanomuse.cn"})
+    r = _post(url, body, {"Authorization": f"Bearer {key}", **(extra or {})})
     return r["choices"][0]["message"]["content"]
+
+
+def call_openrouter(key, prompt, model="google/gemini-2.0-flash-exp:free"):
+    return _openai_compat("https://openrouter.ai/api/v1/chat/completions", key, prompt, model,
+                          extra={"HTTP-Referer": "https://nanomuse.cn"})
 
 
 def call_cerebras(key, prompt, model="gpt-oss-120b"):
-    url = "https://api.cerebras.ai/v1/chat/completions"
-    body = {"model": model, "temperature": 0.4, "max_tokens": 700,
-            "messages": [{"role": "user", "content": prompt}]}
-    r = _post(url, body, {"Authorization": f"Bearer {key}"})
-    return r["choices"][0]["message"]["content"]
+    return _openai_compat("https://api.cerebras.ai/v1/chat/completions", key, prompt, model)
 
 
 def call_mistral(key, prompt, model="mistral-small-latest"):
-    url = "https://api.mistral.ai/v1/chat/completions"
-    body = {"model": model, "temperature": 0.4, "max_tokens": 700,
-            "messages": [{"role": "user", "content": prompt}]}
-    r = _post(url, body, {"Authorization": f"Bearer {key}"})
-    return r["choices"][0]["message"]["content"]
+    return _openai_compat("https://api.mistral.ai/v1/chat/completions", key, prompt, model)
 
 
 # ── NVIDIA NIM (2026-11-10 실측) ──────────────────────────────────────────

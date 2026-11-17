@@ -143,7 +143,27 @@ SQLite 파일(6.9MB)을 5분마다 커밋하면 히스토리가 하루 수 GB로
 
 ## 4. 파이프라인 상세
 
+### 4.0 공통 규약 (`Cand` · `_reject` · `httpjson`)
+
+2026-11-17 정비. 세 가지 규칙이 여러 곳에 흩어져 있던 것을 이름 붙였다.
+
+- **`osint.Cand`** — 후보 1건. `id title descr url feed cat ts score beat region form util`
+  (뒤 4개는 비어 있을 수 있다). SQL 은 `SELECT {osint.CAND_COLS} ...` 로만 쓰고
+  `osint.cand(row)` 로 감싼다. 컬럼 순서가 어긋나면 **그 자리에서** 터진다.
+  이전에는 위치 기반 튜플이라 호출자마다 길이가 달랐고(8컬럼·12컬럼)
+  `len(r) > 10 else None` 방어가 7곳에 붙어 있었다. `pick` 의 반환값도 `Cand` 다
+  (`url` 은 구글뉴스가 해석된 주소).
+- **`osint._reject(con, id, note, title, log_msg=None)`** — "이 후보는 내보내지 않는다".
+  `UPDATE items SET posted=1, note=?` + `commit` + `log` 를 한 곳에 모았다.
+  이전에는 같은 3줄이 19곳에 복사돼 있었고 그중 4곳은 `commit` 이 빠져 있었다.
+- **`httpjson.post(url, payload, headers, timeout=30)`** — JSON POST 한 벌(UA 포함).
+  `beats.py`·`llm.py` 가 같은 함수를 각자 갖고 있었다. UA 없는 요청은 Cloudflare 1010
+  으로 403 이 나고, 타임아웃이 길면 폴백 전체가 회차(5분)를 넘긴다 — 그 두 규칙이 여기 있다.
+- **`llm._openai_compat(url, key, prompt, model)`** — OpenAI 호환 제공자 한 벌.
+  openrouter·cerebras·mistral 은 URL·모델·헤더만 다른 같은 10줄이었다.
+
 ### 4.1 수집 (`osint.collect`)
+
 
 - 입력: `sources.txt` — `분류|이름|URL` 형식 **96개** (일반 RSS + Google News 쿼리).
 - **샤딩**: `idx = int(time.time()//300) % 2` → 회차마다 절반(48개)만 수집. 피드당 10분 주기.
@@ -275,7 +295,7 @@ pick 단계의 게이트는 캐시된 판정만 쓰고, 판정이 없는 기사�
 ### 4.6 본문 추출 (`writer.py` / `osint.make_draft`)
 
 - Google News 링크는 `writer.resolve_google()` 로 실제 기사 URL 해석
-  (해석된 URL을 **반환 튜플에 반영**해야 한다 — 안 하면 본문 추출이 100% 실패한다).
+  (해석된 URL을 **반환 `Cand` 의 `url` 에 반영**해야 한다 — 안 하면 본문 추출이 100% 실패한다).
 - `fetch_html` → JSON-LD 본문 → 문단 추출 → 문장 점수화(`score_sent`) → 2문장 조립.
 - 본문 300자 미만이면 폴백:
   - RSS `desc` 150자 이상 → 그대로 사용(`body fallback(descr)`)
@@ -361,7 +381,7 @@ pick 단계의 게이트는 캐시된 판정만 쓰고, 판정이 없는 기사�
 
 | 날짜 | 증상 | 원인 | 수정 |
 |---|---|---|---|
-| 11-06 | 게시 60분 침묵 | 구글뉴스 해석 URL을 DB에만 쓰고 반환은 옛 링크 → 본문 추출 100% 실패 | `_candidate_ok` 가 해석된 URL 포함 튜플 반환 |
+| 11-06 | 게시 60분 침묵 | 구글뉴스 해석 URL을 DB에만 쓰고 반환은 옛 링크 → 본문 추출 100% 실패 | `_candidate_ok` 가 해석된 URL 을 담아 반환(지금은 `Cand`) |
 | 11-07 | 잘린 요약 게시(#36) | 길이 하한 60자만 검사 | `is_complete()` — 80자·문장부호 검사 |
 | 11-07 | 사나 공습 3연타 | 형태소 미결합 + 자카드 0.45 단일 임계 | `_stem` + 4중 OR 판정 |
 | 11-08 | 앱 종료 후 데몬 미복구 | 리팩터 잔재 `errors_skipped` NameError 로 매 루프 즉사 | 참조 제거 |

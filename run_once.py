@@ -12,6 +12,7 @@
 - 소스는 한 번에 다 긁지 않고 SHARDS 등분해 번갈아 긁는다.
   96개 × 288회/일 = 27,648 요청은 과하다. 3등분이면 피드당 15분 주기.
 """
+import collections
 import contextlib
 import datetime as dt
 import glob
@@ -127,6 +128,13 @@ def load_state(con):
     return len(keep)
 
 
+# 게시 기록(state/posts/*.jsonl)에 필요한 항목만 뽑는 레코드.
+# 컬럼 순서를 위치로 다루면 무엇이 몇 번째인지 다시 세게 된다(2026-11-17).
+_Posted = collections.namedtuple(
+    "Posted", "beat region key cat summary cu form util",
+    defaults=("", "", "", "", "", "", None, None))
+
+
 def append_state(d, con, row_id):
     """게시 1건을 **제 파일**에 기록한다 (충돌 없는 append).
 
@@ -134,23 +142,23 @@ def append_state(d, con, row_id):
     요약문(x)과 정규화 주소(cu)도 같이 남긴다. 다음 회차의 중복 판정 재료다.
     """
     r = con.execute("SELECT beat, region, key, cat, summary, cu, form, util FROM items"
-                    " WHERE id=?", (row_id,)).fetchone() or ("", "", "", "", "", "", None, None)
-    beat = r[0] or beats.kw_beat(d.get("title", ""), d.get("cat", ""))
-    region = r[1] or beats.kw_region(d.get("title", ""))
+                    " WHERE id=?", (row_id,)).fetchone() or _Posted()
+    beat = r.beat or beats.kw_beat(d.get("title", ""), d.get("cat", ""))
+    region = r.region or beats.kw_region(d.get("title", ""))
     now = osint.now_utc()
     url = d.get("url") or ""
-    rec = {"k": r[2] or "", "u": url[:300], "cu": r[5] or filters.canon_url(url),
+    rec = {"k": r.key or "", "u": url[:300], "cu": r.cu or filters.canon_url(url),
            "t": (d.get("title") or "")[:180],
-           "f": (d.get("feed") or "")[:40], "c": r[3] or d.get("cat", ""),
+           "f": (d.get("feed") or "")[:40], "c": r.cat or d.get("cat", ""),
            "b": beat, "r": region, "s": d.get("score", 0),
-           "x": (r[4] or "")[:1200],
-           "fm": r[6] or "", "ut": r[7],
+           "x": (r.summary or "")[:1200],
+           "fm": r.form or "", "ut": r.util,
            "h": (d.get("headline") or "")[:80],          # 사이트용 한국어 제목
            "m": getattr(osint, "LAST_MSG_ID", 0),      # 반응(👎/👍) 매칭용
            "a": now.strftime("%Y-%m-%d %H:%M UTC")}
     sub = os.path.join(POSTS_DIR, now.strftime("%Y-%m-%d"))
     os.makedirs(sub, exist_ok=True)
-    path = os.path.join(sub, f"{now.strftime('%H%M%S')}-{(r[2] or 'x')[:8]}.jsonl")
+    path = os.path.join(sub, f"{now.strftime('%H%M%S')}-{(r.key or 'x')[:8]}.jsonl")
     with open(path, "w", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     return path
@@ -309,24 +317,25 @@ def install_loose_pick():
     original = osint.pick
 
     def pick(con, cfg):
-        row = original(con, cfg)
-        if row:
-            return row
+        got = original(con, cfg)
+        if got:
+            return got
 
-        cutoff = osint.now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
-        cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
+        cutoff_s = (osint.now_utc() - dt.timedelta(hours=cfg["max_age_hours"])).strftime(
+            "%Y-%m-%d %H:%M UTC")
         _cut = (osint.now_utc() - dt.timedelta(hours=36)).strftime("%Y-%m-%d %H:%M UTC")
-        recent = [r[0] for r in con.execute(
+        recent = [t for (t,) in con.execute(
             "SELECT title FROM items WHERE posted=1 AND posted_at>=? "
             "ORDER BY posted_at DESC LIMIT 400", (_cut,))]
         df = osint.df_map(con)
+        heat = osint.story_heat(con)
 
-        def usable(r):
-            title = r[1] or ""
+        def usable(c):
+            title = c.title or ""
             # 같은 이야기가 하루 SAGA_CAP 건을 넘었으면 안전망에서도 건너뛴다.
             if osint.saga_blocked(heat, title):
                 return False
-            if (r[7] or 0) < cfg["min_score"] + 3:
+            if (c.score or 0) < cfg["min_score"] + 3:
                 return False
             if (osint.PRICE_LIST.search(title) or osint.LOW_VALUE.search(title)
                     or osint.LOW_VALUE_ANY.search(title) or osint.COURTESY.search(title)
@@ -335,56 +344,52 @@ def install_loose_pick():
             # 2026-11-12 '빈 슬롯 허용': 안전망은 **품질이 확실할 때만** 채운다.
             # 형식이 뉴스가 아니면 유용도 5 이상(본선 기준 4보다 높다)이어야 하고,
             # 유용도를 모르면 그냥 통과시킨다(정규식 백스톱이 잡는다).
-            util = r[11] if len(r) > 11 else None
-            form = (r[10] if len(r) > 10 else None) or "NEWS"
-            if util is not None and form != "NEWS" and util < 5:
+            if c.util is not None and (c.form or "NEWS") != "NEWS" and c.util < 5:
                 return False
             return True
 
-        def take(r):
-            real = osint._candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
-            if not real:
-                return None
-            con.commit()
-            return (r[0], r[1], r[2], real) + tuple(r[4:8])
-
+        def take(c):
+            got = osint._candidate_ok(con, c, df, recent, cutoff_s, cfg["min_score"])
+            if got:
+                con.commit()
+            return got
 
         # 3차: 최근 게시가 적은 비트부터
-        heat = osint.story_heat(con)
         counts = beats.beat_counts(con, window=12)
+        sql = f"""SELECT {osint.CAND_COLS} FROM items
+                WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8"""
         for b in sorted(beats.BEATS, key=lambda x: counts.get(x, 0)):
-            cands = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util
-                    FROM items WHERE posted=0 AND beat=? ORDER BY score DESC LIMIT 8""",
-                                (b,)).fetchall()
+            cs = [osint.cand(r) for r in con.execute(sql, (b,)).fetchall()]
             # 같은 이야기가 하루 상한을 넘었으면 뒤로 미룬다(사건 예산, 2026-11-12)
-            cands.sort(key=lambda r: -((r[7] or 0) - osint.story_penalty(heat, r[1])))
-            for r in cands:
-                if not usable(r):
+            cs.sort(key=lambda c: -((c.score or 0) - osint.story_penalty(heat, c.title or "")))
+            for c in cs:
+                if not usable(c):
                     continue
-                got = take(r)
+                got = take(c)
                 if got:
-                    print(f"pick(3차·{b} 최근{counts.get(b, 0)}건): {r[7]:.1f} {r[1][:50]}")
+                    print(f"pick(3차·{b} 최근{counts.get(b, 0)}건): {(c.score or 0):.1f} "
+                          f"{(c.title or '')[:50]}")
                     return got
 
         # 4차: 점수 상위 — 사건 상한을 지키는 후보를 먼저, 그래도 없으면 마지막 수단으로
         # 사건 상한을 푼 후보까지 본다(채널이 조용해지는 것보다는 낫다).
-        rows = con.execute("""SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util
-                FROM items WHERE posted=0 ORDER BY score DESC LIMIT 60""").fetchall()
-        rows.sort(key=lambda r: -((r[7] or 0) - osint.story_penalty(heat, r[1])))
+        rows = [osint.cand(r) for r in con.execute(
+            f"SELECT {osint.CAND_COLS} FROM items WHERE posted=0 "
+            "ORDER BY score DESC LIMIT 60").fetchall()]
+        rows.sort(key=lambda c: -((c.score or 0) - osint.story_penalty(heat, c.title or "")))
         for relax in (False, True):
-            for r in rows:
-                if relax:
-                    if (r[7] or 0) < cfg["min_score"] + 3:
+            for c in rows:
+                if relax:                   # 완화: 품질 하한과 형식 기준만 남긴다
+                    if (c.score or 0) < cfg["min_score"] + 3:
                         continue
-                    ok = (r[11] is None or (r[10] or "NEWS") == "NEWS" or r[11] >= 5)
-                    if not ok:
+                    if c.util is not None and (c.form or "NEWS") != "NEWS" and c.util < 5:
                         continue
-                elif not usable(r):
+                elif not usable(c):
                     continue
-                got = take(r)
+                got = take(c)
                 if got:
-                    print(f"pick(4차{'·완화' if relax else ''}·점수): {r[7]:.1f} "
-                          f"form={r[10]} util={r[11]} {r[1][:50]}")
+                    print(f"pick(4차{'·완화' if relax else ''}·점수): {(c.score or 0):.1f} "
+                          f"form={c.form} util={c.util} {(c.title or '')[:50]}")
                     return got
         con.commit()
         return None

@@ -11,7 +11,7 @@
 DB: /var/minis/shared/osint/osint.db
 설정: /var/minis/shared/osint/config.json
 """
-import argparse, hashlib, json, os, re, sqlite3, subprocess, sys, time
+import argparse, collections, hashlib, json, os, re, sqlite3, subprocess, sys, time
 import contextlib
 import datetime as dt
 import urllib.parse, urllib.request
@@ -637,92 +637,100 @@ def africa_ok(title):
     return bool(AFRICA_HARD.search(t) or AFRICA_DIPLO.search(t))
 
 
-def _candidate_ok(con, r, df, recent, cutoff_s, min_score):
+# ── 후보 레코드 ────────────────────────────────────────────────────────
+# 왜 namedtuple 인가 (2026-11-17): 후보는 '위치 기반 튜플'이었다. 호출자마다 길이가
+# 달라서(8컬럼·12컬럼) `len(r) > 10 else None` 방어가 7곳에 붙었고, 컬럼 하나를
+# 더하려면 r[N] 62곳을 같이 봐야 했다. 이름이 있으면 그 계약 자체가 사라진다.
+CAND_COLS = "id,title,descr,url,feed,cat,ts,score,beat,region,form,util"
+Cand = collections.namedtuple(              # beat·region·form·util 은 비어 있을 수 있다
+    "Cand", CAND_COLS.replace(",", " "), defaults=(None,) * 4)
+
+
+def cand(row):
+    """SELECT CAND_COLS 결과 → Cand. 컬럼 순서가 어긋나면 여기서 바로 터진다."""
+    return Cand(*row)
+
+
+def _reject(con, item_id, note, title="", log_msg=None):
+    """후보 1건을 '게시 안 함'으로 표시한다. note 는 게이트 로그·주간 점검의 재료다.
+
+    왜 헬퍼인가: 같은 3줄(UPDATE + commit + log)이 19곳에 복사돼 있었고 그중 4곳은
+    commit 이 빠져 있었다(2026-11-17). 규칙이 한 곳에 있어야 note 와 커밋 시점이 안 어긋난다.
+    """
+    con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (note, item_id))
+    con.commit()
+    log(log_msg or f"{note}: {title[:50]}")
+
+
+def _candidate_ok(con, c, df, recent, cutoff_s, min_score):
     """후보 검증(구글뉴스 해석·정크·만료·중복).
 
-    통과하면 **해석된 URL을 반영한 새 튜플**을, 아니면 None을 돌려준다.
+    통과하면 **해석된 URL을 반영한 새 Cand**를, 아니면 None 을 돌려준다.
     (구글뉴스 링크를 그대로 넘기면 본문 추출이 100% 실패한다 — 2026-11-07 사고)
     """
-    _id, title, descr, url, feed, cat, ts, sc = r[:8]
+    import beats
+    import taste
+    title = c.title or ""
+    descr = c.descr or ""
+    url = c.url or ""
     if url and "news.google.com/rss/articles" in url:
         url = resolve_url(con, url)
-        con.execute("UPDATE items SET url=? WHERE id=?", (url, _id))
-        r = (r[0], r[1], r[2], url) + tuple(r[4:])
+        con.execute("UPDATE items SET url=? WHERE id=?", (url, c.id))
+        c = c._replace(url=url)
     if not url or "news.google.com/rss/search" in url or junk_item(title, url):
-        con.execute("UPDATE items SET posted=1, note='no_direct_url' WHERE id=?", (_id,))
+        _reject(con, c.id, "no_direct_url", title)
         return None
-    if NOISE_TITLE.search(title or ""):
-        con.execute("UPDATE items SET posted=1, note='noise' WHERE id=?", (_id,))
+    if NOISE_TITLE.search(title):
+        _reject(con, c.id, "noise", title)
         return None
-    if ts and ts < cutoff_s:
-        con.execute("UPDATE items SET posted=1, note='expired' WHERE id=?", (_id,))
+    if c.ts and c.ts < cutoff_s:
+        _reject(con, c.id, "expired", title)
         return None
-    if sc < min_score:
+    if (c.score or 0) < min_score:
         return None
     # 라운드업·오피니언·종목추천은 내용이 섞여서 요약이 사고를 낸다.
     # (2026-11-09: 금리 기사 요약에 F1 브라질 우승이 붙었다 — Rio Times Big Read)
     # 주제 차단: 스포츠·종교/생활·홍보/의례 (2026-11-10 👎 분석)
     tblock = flt.topic_block(title)
     if tblock:
-        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (tblock, _id))
-        con.commit()
-        log(f"{tblock}: {title[:50]}")
+        _reject(con, c.id, tblock, title)
         return None
     # 아프리카는 **분쟁만** 보도한다 (2026-11-10 지시: 쿠데타·반군 교전·분쟁)
-    import beats
-    # 주의: run_once.install_loose_pick 은 8컬럼(id..score)만 넘긴다 — 인덱싱은 방어적으로
-    beat = r[8] if len(r) > 8 else ""
-    region = (r[9] if len(r) > 9 and r[9] else None) or beats.kw_region(title)
+    region = c.region or beats.kw_region(title)
     if region == "AFRICA" and not africa_ok(title):
-        con.execute("UPDATE items SET posted=1, note='africa_non_conflict' WHERE id=?", (_id,))
-        con.commit()
-        log(f"africa_non_conflict: {title[:50]}")
+        _reject(con, c.id, "africa_non_conflict", title)
         return None
     # 지역 라벨이 틀린 경우(나이지리아 기사가 ASIA/US 로 분류)를 매체로 잡는다
-    if feed in AFRICA_FEEDS and not africa_ok(title):
-        con.execute("UPDATE items SET posted=1, note='africa_feed_non_conflict' WHERE id=?", (_id,))
-        con.commit()
-        log(f"africa_feed_non_conflict: {title[:50]}")
+    if c.feed in AFRICA_FEEDS and not africa_ok(title):
+        _reject(con, c.id, "africa_feed_non_conflict", title)
         return None
     reason = flt.is_digest(title, url)
     if reason:
-        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (reason, _id))
-        con.commit()
-        log(f"{reason}: {title[:50]}")
+        _reject(con, c.id, reason, title)
         return None
     dup_of = next((t for t in recent if similar(title, t) > 0.45 or same_event(title, t, df)), None)
-    if dup_of:
-        con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (_id,))
-        log(f"dup: {title[:46]} ≒ {dup_of[:46]}")   # 과잉 차단 추적용 (2026-11-08)
+    if dup_of:                                   # 과잉 차단 추적용 (2026-11-08)
+        _reject(con, c.id, "dup", title, f"dup: {title[:46]} ≒ {dup_of[:46]}")
         return None
     # 형식 게이트 (2026-11-12) — 이 파이프라인의 주 게이트다.
     # 👎 11건의 사유는 소재가 아니라 형식(일상 시황·보도자료·상황보고·전망·지방 정치)이었다.
     # 비트 분류는 '무엇에 관한가'만 보므로 형식을 통과시킨다 → 분류 콜에서 같이 받아 여기서 버린다.
     # 유용도를 못 받았으면(구형 응답·LLM 실패) 판단하지 않고 아래 정규식 백스톱에 맡긴다.
-    import beats as _bs
-    form = r[10] if len(r) > 10 else None
-    util = r[11] if len(r) > 11 else None
-    if _bs.drop_form(form, util, title=title):
-        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", _id))
-        con.commit()
-        log(f"form: {form} util={util} {title[:50]}")
+    form, util = c.form, c.util
+    if beats.drop_form(form, util, title=title):
+        _reject(con, c.id, f"form:{form}", title, f"form: {form} util={util} {title[:50]}")
         return None
     # LLM 분류가 죽은 회차(429 등)에는 form 이 비어 있다. 그때만 시황 백스톱을 쓴다.
     if form is None and flt.market_wrap(title):
-        con.execute("UPDATE items SET posted=1, note='form:MARKET(rule)' WHERE id=?", (_id,))
-        con.commit()
-        log(f"form(rule): MARKET {title[:50]}")
+        _reject(con, c.id, "form:MARKET(rule)", title, f"form(rule): MARKET {title[:50]}")
         return None
     try:                                     # 취향 축에서 여러 개가 겹쳐 밀리는 글
-        import taste
         if taste.blocked(title, descr):
-            con.execute("UPDATE items SET posted=1, note='taste' WHERE id=?", (_id,))
-            con.commit()
-            log(f"taste: {title[:50]}")
+            _reject(con, c.id, "taste", title)
             return None
     except Exception:
         pass
-    return url        # 실제 기사 URL (구글뉴스 링크면 해석된 주소)
+    return c          # url 이 해석된 후보
 
 
 def form_gate_item(con, item_id, title, descr=""):
@@ -751,14 +759,10 @@ def form_gate_item(con, item_id, title, descr=""):
                            WHERE id=?""", (lab[0] or "", lab[1] or "", form, util, item_id))
             con.commit()
     if _bs.drop_form(form, util, title=title):
-        con.execute("UPDATE items SET posted=1, note=? WHERE id=?", (f"form:{form}", item_id))
-        con.commit()
-        log(f"form: {form} util={util} {title[:50]}")
+        _reject(con, item_id, f"form:{form}", title, f"form: {form} util={util} {title[:50]}")
         return False
     if form is None and flt.market_wrap(title):
-        con.execute("UPDATE items SET posted=1, note='form:MARKET(rule)' WHERE id=?", (item_id,))
-        con.commit()
-        log(f"form(rule): MARKET {title[:50]}")
+        _reject(con, item_id, "form:MARKET(rule)", title, f"form(rule): MARKET {title[:50]}")
         return False
     return True
 
@@ -768,16 +772,16 @@ def pick(con, cfg):
 
     점수 1등만 뽑으면 한 분야가 채널을 독점한다. 최근 10건의 비트 분포를 보고
     목표 비율에서 가장 모자란 비트부터 채운다. 그 안에서는 점수 순.
+    반환은 `Cand`(url 이 해석된 후보) 또는 None.
     """
     import beats as _b
-    cutoff = now_utc() - dt.timedelta(hours=cfg["max_age_hours"])
-    cutoff_s = cutoff.strftime("%Y-%m-%d %H:%M UTC")
+    cutoff_s = (now_utc() - dt.timedelta(hours=cfg["max_age_hours"])).strftime("%Y-%m-%d %H:%M UTC")
     # 중복 판정 창: **36시간**. 80건(≈10시간)이던 때 하루 전 사건이 '속보'로 다시 나갔다.
     # 그렇다고 300건(건수 기준)으로 두면 게시량이 줄 때 창이 4일까지 늘어나
     # 서로 다른 사건까지 묶인다(2026-11-14 실측: dup 차단이 시간당 178건, 게시 8→3건/h).
     # 그래서 건수가 아니라 **시간**으로 자른다.
     _cut = (now_utc() - dt.timedelta(hours=36)).strftime("%Y-%m-%d %H:%M UTC")
-    recent = [r[0] for r in con.execute(
+    recent = [t for (t,) in con.execute(
         "SELECT title FROM items WHERE posted=1 AND posted_at>=? "
         "ORDER BY posted_at DESC LIMIT 400", (_cut,))]
     try:
@@ -785,8 +789,7 @@ def pick(con, cfg):
     except Exception:
         df = {}
 
-    
-    sql = """SELECT id,title,descr,url,feed,cat,ts,score,beat,region,form,util FROM items
+    sql = f"""SELECT {CAND_COLS} FROM items
         WHERE posted=0 AND (beat=? OR (COALESCE(beat,'')=? AND cat=?))
         ORDER BY score DESC LIMIT 30"""
     cat_hint = {"TECH": "tech", "ECONOMY": "economy", "CONFLICT": "conflict",
@@ -794,7 +797,6 @@ def pick(con, cfg):
 
     bad = bad_feeds(con)
     health = feed_health(con)
-    pen = _b.quota_penalty(con)
     stats = _b.beat_stats(con)
 
     # 비트별 상위 후보를 모아 **전역 유효점수**로 정렬한다.
@@ -804,74 +806,69 @@ def pick(con, cfg):
     rdef = dict(_b.region_deficits(con))
     pool = []
     for b in _b.BEATS:
-        cand = [r for r in con.execute(sql, (b, "", cat_hint.get(b, "-"))).fetchall()
-                if r[4] not in bad]
-        cand.sort(key=lambda r: -(r[7] * (0.55 + 0.45 * health.get(r[4], 0.8))))
-        for r in cand[:15]:
-            reg = r[9] if len(r) > 9 and r[9] else None
-            kr = _b.kw_region(r[1])
+        cs = [cand(row) for row in con.execute(sql, (b, "", cat_hint.get(b, "-"))).fetchall()]
+        cs = [c for c in cs if c.feed not in bad]
+        cs.sort(key=lambda c: -((c.score or 0) * (0.55 + 0.45 * health.get(c.feed, 0.8))))
+        for c in cs[:15]:
+            reg = c.region
+            kr = _b.kw_region(c.title)
             if (not reg or reg == "GLOBAL") and kr and kr != "GLOBAL":
                 reg = kr                     # 제목에 나라 이름이 있으면 그 지역 우선
-            reg = reg or "GLOBAL"
-            pool.append((_b.z_score(r[7], b, stats), b, r, reg))
+            pool.append((_b.z_score(c.score, b, stats), b, c, reg or "GLOBAL"))
     pool.sort(key=lambda x: -x[0])
 
     recent_c = _b.beat_counts(con, window=5)
     hot_heat = story_heat(con)
-    for z, b, r, reg in pool:
+    for z, b, c, reg in pool:
         if z < _b.HOT_Z:
             break
         if recent_c.get(b, 0) >= 3:          # 같은 비트가 최근 5건 중 3건 이상이면 우선 레인 금지
             continue
         # 같은 사건이 24시간에 10건 넘게 나갔으면 우선 레인에서도 막는다.
         # (2026-11-13: 엔비디아·젠슨 황이 42시간에 63건. 새 국면이면 z 가 더 높다.)
-        if saga_blocked(hot_heat, r[1], cap=SAGA_CAP + 4, country_cap=16):
+        if saga_blocked(hot_heat, c.title, cap=SAGA_CAP + 4, country_cap=16):
             continue
-        real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
-        if real:
+        got = _candidate_ok(con, c, df, recent, cutoff_s, cfg["min_score"])
+        if got:
             con.execute("UPDATE items SET beat=? WHERE id=? AND COALESCE(beat,'')=''",
-                        (b, r[0]))
+                        (b, c.id))
             con.commit()
-            log(f"pick(hot): {b} score={r[7]:.1f} z={z:.1f} "
-                f"form={r[10] if len(r) > 10 else '-'} util={r[11] if len(r) > 11 else '-'} "
-                f"{r[1][:40]}")
-            row = list(r[:8])
-            row[3] = real
-            return tuple(row)
+            log(f"pick(hot): {b} score={c.score:.1f} z={z:.1f} "
+                f"form={c.form or '-'} util={c.util if c.util is not None else '-'} "
+                f"{c.title[:40]}")
+            return got
 
     # ── 균형 레인: 목표비에서 모자란 비트부터. 단 그 비트의 평균 이상(z>=FLOOR_Z)만 ──
     by_beat = {}
-    for z, b, r, reg in pool:
+    for z, b, c, reg in pool:
         if z >= _b.FLOOR_Z:
-            by_beat.setdefault(b, []).append((z, b, r, reg))
+            by_beat.setdefault(b, []).append((z, b, c, reg))
     # 비트별로 '지역이 모자란' 후보를 우선 고르되, 이미 하루 3건 넘게 나간
     # 이야기는 감점한다(사건 예산). 같은 사건이 슬롯을 독점하지 않게 하는 장치다.
     heat = story_heat(con)
     best = {}
     for b, rows in by_beat.items():
         rows.sort(key=lambda x: (-(rdef.get(x[3], 0) > 0),
-                                 -(x[0] - story_penalty(heat, x[2][1]))))
+                                 -(x[0] - story_penalty(heat, x[2].title))))
         best[b] = rows[:4]           # 1등이 막히면(만료·중복·형식) 다음 후보로 넘어간다
     for b, _deficit in _b.beat_deficits(con):
-        for z, _b2, r, reg in best.get(b, []):
+        for z, _b2, c, reg in best.get(b, []):
             # 같은 이야기가 하루 SAGA_CAP 건을 넘었으면 이 레인에서는 건너뛴다.
             # (감점만 하면 그 비트에 다른 후보가 없을 때 그대로 뽑힌다 — 2026-11-16 실측:
             #  엔비디아·젠슨 황이 24시간에 33건, 그중 절반이 '또 그 이야기'였다)
-            if saga_blocked(heat, r[1]):
+            if saga_blocked(heat, c.title):
                 continue
-            real = _candidate_ok(con, r, df, recent, cutoff_s, cfg["min_score"])
-            if not real:
+            got = _candidate_ok(con, c, df, recent, cutoff_s, cfg["min_score"])
+            if not got:
                 continue
             con.execute("UPDATE items SET beat=? WHERE id=? AND COALESCE(beat,'')=''",
-                        (b, r[0]))
+                        (b, c.id))
             con.commit()
-            pen = story_penalty(heat, r[1])
-            log(f"pick: {b} score={r[7]:.1f} z={z:.1f} "
-                f"form={r[10] if len(r) > 10 else '-'} util={r[11] if len(r) > 11 else '-'}"
+            pen = story_penalty(heat, c.title)
+            log(f"pick: {b} score={c.score:.1f} z={z:.1f} "
+                f"form={c.form or '-'} util={c.util if c.util is not None else '-'}"
                 f"{f' story-{pen:.0f}' if pen else ''}")
-            row = list(r[:8])
-            row[3] = real
-            return tuple(row)
+            return got
     con.commit()
     return None
 
@@ -930,9 +927,9 @@ def related(con, title, exclude_url, main_feed=None, limit=2):
     return out
 
 
-def compose(row, con, cfg):
-    """기사 1건 → 정리형 메시지 (해설 본문 + 접히는 출처 블록)."""
-    _id, title, descr, url, feed, cat, ts, sc = row
+def compose(c, con, cfg):
+    """기사 1건(Cand) → 정리형 메시지 (해설 본문 + 접히는 출처 블록)."""
+    title, descr, url, feed = c.title or "", c.descr or "", c.url or "", c.feed or ""
     import writer
 
     body = ""
@@ -1009,25 +1006,24 @@ def tick(con, cfg, force=False):
         return None
     row = None
     for _ in range(4):
-        cand = pick(con, cfg)
-        if not cand:
+        got = pick(con, cfg)
+        if not got:
             con.commit()
             return None
-        text = compose(cand, con, cfg)
+        text = compose(got, con, cfg)
         if text:
-            row, text = cand, text
+            row, text = got, text
             break
-        con.execute("UPDATE items SET posted=1, note='no_body' WHERE id=?", (cand[0],))
-        con.commit()
+        _reject(con, got.id, "no_body", got.title)
     if not row:
         return None
     ok, err = send(text, cfg["channel"])
     if ok:
         con.execute("UPDATE items SET posted=1, posted_at=?, note=NULL WHERE id=?",
-                    (now.strftime("%Y-%m-%d %H:%M UTC"), row[0]))
+                    (now.strftime("%Y-%m-%d %H:%M UTC"), row.id))
         meta_set(con, "last_post", now.strftime("%Y-%m-%d %H:%M:%S"))
         con.commit()
-        log(f"posted: {row[1][:70]}")
+        log(f"posted: {(row.title or '')[:70]}")
         return row
     log(f"send failed: {err}")
     return None
@@ -1249,10 +1245,11 @@ def make_draft(con, cfg):
                 pass
             os.remove(fp)
     for _ in range(5):
-        row = pick(con, cfg)
-        if not row:
+        c = pick(con, cfg)
+        if not c:
             return None
-        _id, title, descr, url, feed, cat, ts, sc = row
+        _id, title, descr, url, feed = c.id, c.title or "", c.descr or "", c.url or "", c.feed or ""
+        sc = c.score or 0
         try:
             page = writer.fetch_html(url)
             paras = writer.paragraphs(page)
@@ -1263,18 +1260,17 @@ def make_draft(con, cfg):
         if page:
             pd = nf.page_date(page)
             if pd and (now_utc() - pd) > dt.timedelta(hours=48):
-                con.execute("UPDATE items SET posted=1, note='stale_page' WHERE id=?", (_id,))
-                con.commit()
-                log(f"stale_page({(now_utc() - pd).days}일): {title[:45]}")
+                _reject(con, _id, "stale_page", title,
+                        f"stale_page({(now_utc() - pd).days}일): {title[:45]}")
                 continue
         text = " ".join(paras)[:4000]
         thin = False
         if len(text) < 300:
             # 본문 추출 실패(페이월·JS 페이지) → RSS 요약문으로 대체
-            if len(descr or "") >= 150:
+            if len(descr) >= 150:
                 text = descr[:1500]
                 log(f"body fallback(descr): {title[:50]}")
-            elif (len(descr or "") >= 70 and sc >= 14
+            elif (len(descr) >= 70 and sc >= 14
                   and not LOW_VALUE.search(title) and not LOW_VALUE_ANY.search(title)
                   and not PRICE_LIST.search(title)):
                 # 짧은 스니펫만 있는 기사(페이월·구글뉴스 요약) → 2문장 속보로만 쓴다.
@@ -1283,20 +1279,16 @@ def make_draft(con, cfg):
                 thin = True
                 log(f"body thin(descr {len(descr)}자): {title[:50]}")
             else:
-                con.execute("UPDATE items SET posted=1, note='no_body' WHERE id=?", (_id,))
-                con.commit()
-                log(f"no_body: {feed[:16]} {title[:50]}")
+                _reject(con, _id, "no_body", title, f"no_body: {feed[:16]} {title[:50]}")
                 continue
         # 같은 사건이 이미 나갔으면 이 후보를 버리고 다음 후보로 넘어간다.
         # (회차를 통째로 비우지 않으려면 여기서 continue 해야 한다 — 2026-11-13)
         if _is_dup_title(con, title):
-            con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (_id,))
-            con.commit()
-            log(f"dup(draft): {title[:50]}")
+            _reject(con, _id, "dup", title, f"dup(draft): {title[:50]}")
             continue
         srcs = [{"feed": feed, "url": url}] + [{"feed": f, "url": u} for f, u in related(con, title, url, feed)]
-        draft = {"id": _id, "title": title, "url": url, "feed": feed, "cat": cat,
-                 "ts": ts, "score": sc, "text": text, "thin": thin, "sources": srcs}
+        draft = {"id": _id, "title": title, "url": url, "feed": feed, "cat": c.cat,
+                 "ts": c.ts, "score": sc, "text": text, "thin": thin, "sources": srcs}
         with open(f"{QUEUE}/{_id}.json", "w", encoding="utf-8") as f:
             json.dump(draft, f, ensure_ascii=False, indent=1)
         con.execute("UPDATE items SET note='queued' WHERE id=?", (_id,))
@@ -1386,11 +1378,10 @@ def _llm_publish_locked(con, cfg, llm):
     # 다른 매체로 먼저 게시됐을 수 있으므로 보내기 전에 중복을 다시 본다.
     # (fresh 초안은 make_draft 안에서 검사한다 — 거기서는 다음 후보로 넘어갈 수 있다.)
     if dpath and _is_dup_title(con, d.get("title", "")):
-        con.execute("UPDATE items SET posted=1, note='dup' WHERE id=?", (d["id"],))
-        con.commit()
+        _reject(con, d["id"], "dup", d.get("title", ""),
+                f"dup(queued): {d.get('title', '')[:50]}")
         with contextlib.suppress(OSError):
             os.remove(dpath)
-        log(f"dup(queued): {d.get('title', '')[:50]}")
         return None
     # 마지막 형식 게이트 — 요약(비싼 콜) 전에, 실제로 내보낼 1건만 판정한다.
     if not form_gate_item(con, d["id"], d["title"]):
@@ -1407,13 +1398,10 @@ def _llm_publish_locked(con, cfg, llm):
     # 요약문 수준 중복 차단 — 매체·제목이 달라도 같은 사건이면 여기서 걸린다.
     prev = dup_body(con, body)
     if prev:
-        con.execute("UPDATE items SET posted=1, note='dup_body' WHERE id=?", (d["id"],))
-        con.commit()
-        try:
+        _reject(con, d["id"], "dup_body", d["title"],
+                f"dup_body: {d['title'][:40]} ≒ {prev[:40]}")
+        with contextlib.suppress(OSError):
             os.remove(dpath or f"{QUEUE}/{d['id']}.json")
-        except OSError:
-            pass
-        log(f"dup_body: {d['title'][:40]} ≒ {prev[:40]}")
         return None
     srcs = d["sources"][:3]
     links = "\n".join(f'· <a href="{esc(x["url"])}">{esc(x["feed"])}</a>' for x in srcs)
