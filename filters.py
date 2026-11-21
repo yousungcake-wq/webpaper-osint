@@ -167,11 +167,66 @@ def nigeria_politics(title):
     return not NG_HARD_EVENT.search(t)
 
 
+# ── 2026-11-22 주간 점검 (👎 45건 사유 분석) ──────────────────────────────
+# 사유를 문장으로 세어 보니 4덩어리였고, 그중 셋은 기존 규칙의 **구멍**이었다.
+
+# (1) 스포츠 — SPORT 는 리그·종목명만 알고 팀 애칭·동작어를 몰랐다.
+#     👎 #1588 "Super Eagles debut"(축구), #1755 "fifth straight win"(NFL),
+#     #2125 "a swim for hope"(수영), #950 "Junior Chipolopolo Arrive" 가 전부 통과했다.
+#     제목에 'football'·'nfl' 이 없으면 걸리지 않는 구조였다.
+#     (11-22 실측: 최근 게시 327건 중 0건 차단 — 오탐 없음)
+SPORT_EXTRA = re.compile(r"(?i)("
+    r"super eagles|black stars|chipolopolo|teranga lions|indomitable lions|"
+    r"\bswim(ming|mer|s)?\b|\bathletics\b|\bmarathon\b|\bwrestl\w+|\bjudo\b|\btaekwondo\b|"
+    r"\bbadminton\b|\bvolleyball\b|\bhandball\b|\brugby\b|\bhockey\b|\bbasketball\b|"
+    r"\bhat-?trick\b|\bpenalty shootout\b|\bsemi-?finals?\b|\bquarter-?finals?\b|"
+    r"\bstraight win\b|\bwinning (run|streak)\b|\bunbeaten\b)")
+
+# (2) 외교·행사 의례 — 사과·MOU·정상회의 '방안 모색'·의상·'협력 모색'.
+#     사건이 아니라 자리다. 👎 #1584 #1599 #1627 #2025 #2341 #1774.
+#     단 cyber 사고 사과(#1599 Coles 👍)는 사건이므로 제외한다.
+CEREMONY = re.compile(r"(?i)("
+    r"apolog(is|iz)\w+(?![^.]{0,70}(cyber|outage|customers?|data breach|glitch|service))|"
+    r"\bsign(s|ed|ing)?\b.{0,60}\b(mou|memorandum|agreement|accord)\b.{0,60}"
+    r"\b(social services|family protection|social protection|cultural|tourism|youth|women|"
+    r"children|education)\b|"
+    r"\bmou\b|"
+    r"\b(wears?|wore|donned)\b.{0,45}\b(silk|dress|attire|costume|outfit)\b|"
+    r"\b(drawing|draws|drew) praise\b|"
+    r"\b(seeks?|seeking|explores?|mulls?)\b.{0,40}\b(cooperation|partnership|synerg\w+)\b|"
+    r"\b(seek|seeks)\b.{0,35}\b(tackle|address|find|explore)\b.{0,30}\bchallenges?\b|"
+    r"\b(eye|eyes|eyeing|weigh\w*|mull\w*)\b.{0,30}\b(talks|visit|summit|deal|pact)\b)")
+
+# (3) 기업 임상·자금조달 디테일 — 사건이 아니라 파이프라인 진행 상황.
+#     👎 #1955 (FDA 불승인), #2059 (8.36M 조달·Phase III), #1587 (30억 조달).
+#     범위를 좁게 잡았다: 'ipo' 만으로 걸면 Anthropic IPO 처럼 큰 사건까지 날아간다.
+PIPELINE = re.compile(r"(?i)("
+    r"\bphase\s(i{1,3}|[123])\b|"
+    r"\bfda\b.{0,50}\b(approv\w*|reject\w*|declin\w*|denies|deny|halt\w*)\b|"
+    r"\b(series\s[a-c]|pre-ipo|post-ipo)\b)")
+
+# (4) 확인되지 않은 경고·주장 — 사건이 아니라 단체·인물의 말.
+#     👎 #1600 "Warning of Suspected Chemical Weapons Storage",
+#     #1623 "pose threat to Somalia's existence: Somali president".
+#     ⚠️ 'X says/deneid' 를 통째로 막으면 "Trump says no rush on Iran decision" 같은
+#     진짜 뉴스가 죽는다(실측 327건 중 38건). 그래서 **제목이 경고문이거나,
+#     발언을 콜론 뒤 인물에게 붙인 형태**만 잡는다.
+HEDGED = re.compile(r"(?i)("
+    r"^(warning|alert|claim|claims)\s+(of|that)\b|"
+    r"\bpose(s|d)?\s+(a\s+)?(threat|risk)\s+to\b.{0,50}:\s*\S+\.?$|"
+    r":\s*[A-Z]?\w*\s?(president|minister|premier|leader|spokesman|envoy)\s*\.?$)")
+
 def topic_block(title):
     """주제 자체가 뉴스 가치 없는 것(스포츠·종교·생활·홍보/의례)이면 이유 문자열."""
     t = title or ""
-    if SPORT.search(t):
+    if SPORT.search(t) or SPORT_EXTRA.search(t):
         return "sport"
+    if CEREMONY.search(t):
+        return "ceremony"
+    if PIPELINE.search(t):
+        return "pipeline"
+    if HEDGED.search(t):
+        return "hedged"
     if RELIGION_LIFE.search(t):
         return "life"
     if CSR_PROMO.search(t):

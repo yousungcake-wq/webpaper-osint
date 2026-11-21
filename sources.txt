@@ -58,7 +58,7 @@ conflict|Radio Dabanga|https://www.dabangasudan.org/en/feed/rss
 conflict|AllAfrica|https://allafrica.com/tools/headlines/rdf/latest/headlines.rdf
 conflict|Africa Report|https://www.theafricareport.com/feed/
 conflict|HumAngle|https://humanglemedia.com/feed/
-conflict|African Arguments|https://africanarguments.org/feed/
+conflict|Anadolu Africa|https://www.aa.com.tr/en/rss/default?cat=africa
 conflict|Premium Times|https://www.premiumtimesng.com/feed
 conflict|M&G Africa|https://mg.co.za/rss/
 conflict|Middle East Eye|https://www.middleeasteye.net/rss
@@ -97,3 +97,4 @@ google|GN Andean|https://news.google.com/rss/search?q=Colombia%20OR%20Peru%20OR%
 politics|Latin America Reports|https://latinamericareports.com/feed/
 politics|Buenos Aires Times|https://www.batimes.com.ar/feed
 tech|GeekNews|https://news.hada.io/rss/news
+conflict|Latin American Post|https://latinamericanpost.com/feed/
